@@ -1,0 +1,12 @@
+node_modules/
+dist/
+preview*.png
+render-report*.json
+gear-take*.json
+gear-take*.webm
+gear-take*.mp4
+gear-render-diagnostic*.json
+.DS_Store
+Thumbs.db
+.env
+.env.*

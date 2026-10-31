@@ -1,0 +1,13 @@
+{
+  "name": "interactive-gears",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive SVG gear train with inertia, friction, spring-centered torque control and rendering diagnostics",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test physics.test.mjs",
+    "build:artwork": "node build-artwork.mjs"
+  }
+}

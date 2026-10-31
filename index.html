@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gear Works — interactive gear train</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header><div><span class="eyebrow">INTERACTIVE MECHANISM</span><h1>Gear Works<span class="dot">.</span></h1></div><div class="header-note">36 teeth drive 24 & 18<br><span>Inertia · friction · reversible torque</span></div></header>
+<main>
+ <section class="machine" aria-label="Interactive gear mechanism">
+  <div id="artwork" class="artwork"></div>
+ </section>
+ <aside>
+  <div class="control-title"><span class="eyebrow">APPLIED TORQUE</span><output id="torque-value">0.00</output></div>
+  <p class="hint">Push and hold. Release to coast.</p>
+  <div class="slider-area">
+   <div class="direction top">↶<span>COUNTERCLOCKWISE</span><b>+1</b></div>
+   <div id="torque-slider" class="slider" role="slider" aria-label="Torque applied to gear B. Up is counterclockwise; down is clockwise." aria-orientation="vertical" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0" tabindex="0">
+    <div class="rail"></div><div class="zero-line"></div><div id="torque-fill" class="torque-fill"></div><span class="zero-label">0</span><div id="thumb" class="thumb"><span></span><span></span><span></span></div>
+   </div>
+   <div class="direction bottom"><b>−1</b><span>CLOCKWISE</span>↷</div>
+  </div>
+  <div class="readout"><span>SHAFT B</span><strong id="speed"><span id="speed-value">0.00</span> <small>rpm</small></strong><span id="direction">At rest</span></div>
+  <button id="reset" class="subtle">Reset mechanism</button>
+ </aside>
+</main>
+<footer>
+ <div class="take-controls"><button id="record" class="primary"><span class="record-dot"></span>Record take</button><button id="replay" disabled>Replay</button><button id="save" disabled>Save take</button><button id="movie" disabled>Save movie</button><label class="import">Load take<input id="load" type="file" accept=".json,application/json"></label></div>
+ <div id="status" role="status" aria-live="polite">Ready. Drag the slider, or hold ↑ / ↓ while it is focused.</div>
+</footer>
+<script type="module" src="app.mjs"></script>
+</body></html>
