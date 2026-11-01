@@ -3,6 +3,23 @@ export const clamp = value => Math.max(-1, Math.min(1, value));
 // SVG/canvas angles increase clockwise, whereas physical positive torque is CCW.
 export const visualAngle = (gear, angle) => gear.phase + (gear.id === 'b' ? -angle : 36 / gear.z * angle);
 export const interpolateAngle = (previous, current, fraction) => previous.angle + (current.angle - previous.angle) * Math.max(0, Math.min(1, fraction));
+export const clockwisePhase = (rotation, markerAngle = Math.PI / 3) => {
+  const turns = (rotation + markerAngle + Math.PI / 2) / (2 * Math.PI);
+  return ((turns % 1) + 1) % 1;
+};
+export function orientGears(gears) {
+  const result = gears.map(gear => ({ ...gear, markerAngle: Math.PI / 3 }));
+  const driver = result.find(gear => gear.id === 'b');
+  driver.phase = -Math.PI / 2 - driver.markerAngle;
+  for (const gear of result) {
+    if (gear === driver) continue;
+    const contact = Math.atan2(gear.y - driver.y, gear.x - driver.x);
+    const meshingPhase = contact + Math.PI - (Math.PI - driver.z * (contact - driver.phase)) / gear.z;
+    const pitch = 2 * Math.PI / gear.z, target = -Math.PI / 2 - gear.markerAngle;
+    gear.phase = meshingPhase + Math.round((target - meshingPhase) / pitch) * pitch;
+  }
+  return result;
+}
 export function advance(state, input, dt = SETTINGS.step, settings = SETTINGS) {
   const torque = clamp(input) * settings.maxTorque;
   const w = state.velocity;

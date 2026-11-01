@@ -1,10 +1,12 @@
-import { SETTINGS, advance, clamp, validateTake, visualAngle, interpolateAngle } from './physics.mjs';
+import { SETTINGS, advance, clamp, validateTake, visualAngle, interpolateAngle, clockwisePhase } from './physics.mjs';
 import { setupDiagnostics } from './diagnostics.mjs';
 const $ = id => document.getElementById(id);
 const [art, spec] = await Promise.all([fetch('gears.svg').then(r => r.text()), fetch('gear-spec.json').then(r => r.json())]);
 $('artwork').innerHTML = art;
 const svg = $('artwork').querySelector('svg');
 const rotors = Object.fromEntries(spec.gears.map(g => [g.id, svg.querySelector(`#rotor-${g.id}`)]));
+const markers = Object.fromEntries(spec.gears.map(g => [g.id, svg.querySelector(`#marker-${g.id}`)]));
+const phaseValues = Object.fromEntries(spec.gears.map(g => [g.id, $(`phase-${g.id}`)]));
 let state = { angle: 0, velocity: 0 }, torque = 0, pointer = null, keys = new Set();
 let previousState = state;
 let take = null, recording = null, playback = null, accumulator = 0, previousTime = null;
@@ -93,7 +95,11 @@ function angles(angle = state.angle) { return spec.gears.map(g => visualAngle(g,
 function paint(angle = state.angle, time = Infinity) {
   const rotations = angles(angle);
   if (angle !== lastPaintedAngle) {
-    spec.gears.forEach((g, i) => rotors[g.id].setAttribute('transform', `rotate(${rotations[i] * 180 / Math.PI})`));
+    spec.gears.forEach((g, i) => {
+      const transform = `rotate(${rotations[i] * 180 / Math.PI})`;
+      rotors[g.id].setAttribute('transform', transform);
+      markers[g.id].setAttribute('transform', transform);
+    });
     lastPaintedAngle = angle;
   }
   // Keep the numeric UI out of the per-frame drawing work.
@@ -102,6 +108,10 @@ function paint(angle = state.angle, time = Infinity) {
     const direction = state.velocity > 1e-8 ? 'Counterclockwise ↶' : state.velocity < -1e-8 ? 'Clockwise ↷' : 'At rest';
     if (speedValue.textContent !== rpm) speedValue.textContent = rpm;
     if (directionValue.textContent !== direction) directionValue.textContent = direction;
+    spec.gears.forEach((gear, i) => {
+      const value = ((Math.round(clockwisePhase(rotations[i], gear.markerAngle) * 1000) % 1000) / 1000).toFixed(3);
+      if (phaseValues[gear.id].textContent !== value) phaseValues[gear.id].textContent = value;
+    });
     if (time !== Infinity) lastReadoutTime = time;
   }
   if (movieRecorder) drawMovie(rotations);
@@ -114,6 +124,9 @@ function drawMovie(rotations) {
     ctx.drawImage(gearImages[i], -r, -r, 2 * r, 2 * r); ctx.restore();
     const gradient = ctx.createLinearGradient(g.x - 25, g.y - 25, g.x + 25, g.y + 25); gradient.addColorStop(0, '#b3c3ca'); gradient.addColorStop(1, '#2a414f');
     ctx.beginPath(); ctx.arc(g.x, g.y, 29, 0, Math.PI * 2); ctx.fillStyle = gradient; ctx.fill(); ctx.strokeStyle = g.id === 'b' ? '#d6b275' : '#9aabb5'; ctx.lineWidth = 3; ctx.stroke();
+    const bearing = rotations[i] + g.markerAngle, markerRadius = spec.module * (g.z / 2 + 1);
+    ctx.beginPath(); ctx.moveTo(g.x, g.y); ctx.lineTo(g.x + markerRadius * Math.cos(bearing), g.y + markerRadius * Math.sin(bearing));
+    ctx.strokeStyle = '#ff3434'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
     ctx.textAlign = 'center'; ctx.fillStyle = '#f1f5f6'; ctx.font = 'bold 36px Arial'; ctx.fillText(g.id, g.x, g.y + 12);
   });
 }

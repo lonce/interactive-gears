@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advance, SETTINGS, validateTake, visualAngle, interpolateAngle } from './physics.mjs';
+import { advance, SETTINGS, validateTake, visualAngle, interpolateAngle, clockwisePhase, orientGears } from './physics.mjs';
 function run(state, value, seconds) { for (let i = 0; i < Math.round(seconds / SETTINGS.step); i++) state = advance(state, value); return state; }
 test('zero torque stays at rest', () => assert.deepEqual(run({ angle: 0, velocity: 0 }, 0, 10), { angle: 0, velocity: 0 }));
 test('positive torque turns B counterclockwise; negative is symmetric', () => {
@@ -41,4 +41,25 @@ test('display interpolation is continuous, clamps bounds and leaves simulation s
   assert.equal(interpolateAngle(current, current, .8), 4);
   assert.deepEqual(previous, { angle: 2, velocity: 1 });
   assert.deepEqual(current, { angle: 4, velocity: 2 });
+});
+test('phase is zero up, increases clockwise, and wraps into [0,1)', () => {
+  for (const [rotation, expected] of [[-Math.PI/2,0],[0,.25],[Math.PI/2,.5],[Math.PI,.75],[Math.PI*1.5,0]]) {
+    assert(Math.abs(clockwisePhase(rotation,0)-expected)<1e-12);
+  }
+  assert(clockwisePhase(-100,0)>=0 && clockwisePhase(-100,0)<1);
+});
+test('initial markers are nearest vertical while both meshes remain locked', () => {
+  const gears = orientGears([{id:'a',z:24,x:0,y:0},{id:'b',z:36,x:480,y:0},{id:'c',z:18,x:480,y:-432}]);
+  const b = gears.find(g=>g.id==='b'), tau=2*Math.PI;
+  const distance = p => Math.min(p,1-p);
+  assert.equal(clockwisePhase(b.phase,b.markerAngle),0);
+  for (const gear of gears.filter(g=>g.id!=='b')) {
+    const error = distance(clockwisePhase(gear.phase,gear.markerAngle));
+    for (const offset of [-1,1]) assert(error <= distance(clockwisePhase(gear.phase+offset*tau/gear.z,gear.markerAngle))+1e-12);
+    const contact = Math.atan2(gear.y-b.y,gear.x-b.x);
+    for (const angle of [0,.7,-.7,13]) {
+      const residual = b.z*(contact-visualAngle(b,angle))+gear.z*(contact+Math.PI-visualAngle(gear,angle))-Math.PI;
+      assert(Math.abs(residual/tau-Math.round(residual/tau))<1e-10);
+    }
+  }
 });
