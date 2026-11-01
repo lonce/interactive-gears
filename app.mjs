@@ -1,5 +1,6 @@
 import { SETTINGS, PARAMETERS, WEIGHT_RADIUS, weightSize, advance, clamp, validateTake, visualAngle, interpolateAngle, clockwisePhase } from './physics.mjs';
 import { setupDiagnostics } from './diagnostics.mjs';
+import { GearSound } from './gear-sound.mjs';
 const $ = id => document.getElementById(id);
 const [art, spec] = await Promise.all([fetch('gears.svg').then(r => r.text()), fetch('gear-spec.json').then(r => r.json())]);
 $('artwork').innerHTML = art;
@@ -12,6 +13,7 @@ const weightIcon = document.createElementNS('http://www.w3.org/2000/svg', 'polyg
 weightIcon.id = 'weight-icon'; weightIcon.setAttribute('fill', '#d8a05b'); weightIcon.setAttribute('stroke', '#ffe0a8'); weightIcon.setAttribute('stroke-width', '2.5');
 markers.b.append(weightIcon);
 const phaseValues = Object.fromEntries(spec.gears.map(g => [g.id, $(`phase-${g.id}`)]));
+const sound = new GearSound(spec.gears, $('sound-toggle'));
 let state = { angle: 0, velocity: 0 }, torque = 0, pointer = null, keys = new Set();
 let previousState = state;
 let take = null, recording = null, playback = null, accumulator = 0, previousTime = null;
@@ -29,9 +31,9 @@ const gearImages = await Promise.all(spec.gears.map(async g => {
   try { const image = new Image(); image.src = url; await image.decode(); return image; } finally { URL.revokeObjectURL(url); }
 }));
 const diagnostics = await setupDiagnostics({ svg, rotors, spec, gearImages });
-// Opt-in rendering comparison for normal interactive use. Keep the SVG source
+// Cached images are the default for normal interactive use. Keep the SVG source
 // editable, but rotate a single cached raster per gear instead of its paths.
-if (new URLSearchParams(location.search).get('renderer') === 'bitmap' && !diagnostics) {
+if (new URLSearchParams(location.search).get('renderer') !== 'svg' && !diagnostics) {
   for (const [i, gear] of spec.gears.entries()) {
     const r = gear.z * 8 + 40, raster = document.createElement('canvas');
     raster.width = raster.height = 2 * r;
@@ -126,6 +128,7 @@ function updateButtons() {
 }
 function angles(angle = state.angle) { return spec.gears.map(g => visualAngle(g, angle)); }
 function paint(angle = state.angle, time = Infinity) {
+  sound.follow(angle, !!diagnostics?.active);
   const rotations = angles(angle);
   if (angle !== lastPaintedAngle) {
     spec.gears.forEach((g, i) => {
@@ -173,7 +176,7 @@ function step() {
   previousState = state;
   if (playback) {
     const changes = take.settingsEvents || [];
-    while (playback.settingsCursor < changes.length && changes[playback.settingsCursor].tick <= playback.tick) setParameters({ ...SETTINGS, ...changes[playback.settingsCursor++].settings }, false);
+    while (playback.settingsCursor < changes.length && changes[playback.settingsCursor].tick <= playback.tick) setParameters({ ...SETTINGS, weight: 0, ...changes[playback.settingsCursor++].settings }, false);
     while (playback.cursor < take.events.length && take.events[playback.cursor].tick <= playback.tick) setTorque(take.events[playback.cursor++].value, false);
     state = advance(state, torque, SETTINGS.step, physicsSettings); playback.tick++;
     if (playback.tick >= take.ticks) finishReplay();
@@ -198,7 +201,7 @@ function frame(frameTimestamp) {
     diagnostics.sample(time, measuredInterval, callbackDelay, performance.now() - time);
     requestAnimationFrame(frame); return;
   }
-  if (diagnostics?.consumeFinished()) { previousTime = time; previousState = state; lastPaintedAngle = null; accumulator = 0; }
+  if (diagnostics?.consumeFinished()) { sound.reset(state.angle); previousTime = time; previousState = state; lastPaintedAngle = null; accumulator = 0; }
   if (previousTime !== null && !document.hidden) {
     const interval = time - previousTime;
     accumulator += Math.min(interval / 1000, .1);
@@ -233,7 +236,7 @@ $('record').addEventListener('click', () => {
   status('Recording torque and parameter changes. Click Stop recording when finished.'); updateButtons();
 });
 function startReplay() {
-  release(); setParameters({ ...SETTINGS, ...take.settings }, false); state = { ...take.initial }; previousState = state; playback = { tick: 0, cursor: 0, settingsCursor: 0 }; accumulator = 0; previousTime = null;
+  release(); setParameters({ ...SETTINGS, weight: 0, ...take.settings }, false); state = { ...take.initial }; sound.reset(state.angle); previousState = state; playback = { tick: 0, cursor: 0, settingsCursor: 0 }; accumulator = 0; previousTime = null;
   updateButtons(); paint();
 }
 function finishReplay() {
@@ -243,7 +246,7 @@ function finishReplay() {
 }
 $('replay').addEventListener('click', () => { startReplay(); status('Replaying the recorded torque inputs.'); });
 $('save').addEventListener('click', () => download(new Blob([JSON.stringify(take, null, 2)], { type: 'application/json' }), 'gear-take.json'));
-$('reset').addEventListener('click', () => { release(); state = { angle: 0, velocity: 0 }; previousState = state; accumulator = 0; paint(); status('Mechanism reset. Saved take is retained.'); });
+$('reset').addEventListener('click', () => { release(); state = { angle: 0, velocity: 0 }; sound.reset(0); previousState = state; accumulator = 0; paint(); status('Mechanism reset. Saved take is retained.'); });
 $('load').addEventListener('change', async event => {
   try {
     const file = event.target.files[0]; if (!file) return;
@@ -258,7 +261,9 @@ $('movie').addEventListener('click', async () => {
     if (!window.MediaRecorder || !canvas.captureStream) throw new Error('Movie capture is unavailable in this browser. Save the take for a later frame-by-frame render.');
     const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'].find(type => MediaRecorder.isTypeSupported(type));
     if (!mimeType) throw new Error('No supported movie encoder. Save the take for a later render.');
+    await sound.resume();
     movieChunks = []; movieStream = canvas.captureStream(30);
+    const audioTrack = sound.recordingTrack(); if (audioTrack) movieStream.addTrack(audioTrack);
     movieRecorder = new MediaRecorder(movieStream, { mimeType, videoBitsPerSecond: 10000000 });
     movieRecorder.ondataavailable = event => { if (event.data.size) movieChunks.push(event.data); };
     movieRecorder.onstop = () => {

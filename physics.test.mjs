@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advance, SETTINGS, PARAMETERS, WEIGHT_RADIUS, gravityTorque, weightSize, validateTake, visualAngle, interpolateAngle, clockwisePhase, orientGears } from './physics.mjs';
-function run(state, value, seconds, settings = SETTINGS) { for (let i = 0; i < Math.round(seconds / SETTINGS.step); i++) state = advance(state, value, SETTINGS.step, settings); return state; }
+import { advance, SETTINGS, PARAMETERS, WEIGHT_RADIUS, gravityTorque, weightSize, validateTake, visualAngle, interpolateAngle, clockwisePhase, orientGears, halfPhaseCrossings } from './physics.mjs';
+const BASE = { ...SETTINGS, inertia:10,viscous:1.7,friction:.45,weight:0 };
+function run(state, value, seconds, settings = BASE) { for (let i = 0; i < Math.round(seconds / SETTINGS.step); i++) state = advance(state, value, SETTINGS.step, settings); return state; }
 test('zero torque stays at rest', () => assert.deepEqual(run({ angle: 0, velocity: 0 }, 0, 10), { angle: 0, velocity: 0 }));
 test('positive torque turns B counterclockwise; negative is symmetric', () => {
   const a = run({ angle: 0, velocity: 0 }, 1, 2), b = run({ angle: 0, velocity: 0 }, -1, 2);
@@ -63,14 +64,14 @@ test('initial markers are nearest vertical while both meshes remain locked', () 
     }
   }
 });
-test('each parameter default is the exact slider midpoint', () => {
-  for (const [key, range] of Object.entries(PARAMETERS).filter(([key])=>key!=='weight')) assert.equal((range.min + range.max) / 2, SETTINGS[key]);
-  assert.equal(SETTINGS.weight,0);
+test('startup parameters match the requested defaults within supported ranges', () => {
+  assert.deepEqual([SETTINGS.friction,SETTINGS.viscous,SETTINGS.inertia,SETTINGS.weight],[.4,0,2,4]);
+  for(const [key,range] of Object.entries(PARAMETERS)) assert(SETTINGS[key]>=range.min && SETTINGS[key]<=range.max);
 });
 test('inertia changes acceleration; friction and drag independently slow coasting', () => {
   const rest = { angle: 0, velocity: 0 }, moving = { angle: 0, velocity: .5 };
   assert(run(rest,1,.5,{...SETTINGS,inertia:1}).velocity > run(rest,1,.5,{...SETTINGS,inertia:19}).velocity);
-  const free = {...SETTINGS,friction:0,viscous:0};
+  const free = {...BASE,friction:0,viscous:0};
   assert.equal(run(moving,0,2,free).velocity,.5);
   assert(run(moving,0,2,{...free,friction:.9}).velocity < .5);
   assert(run(moving,0,2,{...free,viscous:3.4}).velocity < .5);
@@ -78,7 +79,7 @@ test('inertia changes acceleration; friction and drag independently slow coastin
 test('take validation accepts old settings and timed parameter changes, rejecting invalid inertia and timing', () => {
   const legacy = { format:'gears-take',version:1,step:SETTINGS.step,settings:{...SETTINGS},initial:{angle:0,velocity:0},ticks:240,events:[{tick:0,value:1},{tick:120,value:0}] };
   assert.equal(validateTake(legacy),legacy);
-  const modern = {...legacy,version:2,settingsEvents:[{tick:120,settings:{...SETTINGS,friction:0,viscous:0,inertia:19}}]};
+  const modern = {...legacy,version:2,settingsEvents:[{tick:120,settings:{...SETTINGS,friction:0,viscous:0,inertia:19,weight:0}}]};
   assert.equal(validateTake(modern),modern);
   let state = run(legacy.initial,1,1,modern.settings), speed = state.velocity;
   state = run(state,0,1,modern.settingsEvents[0].settings); assert.equal(state.velocity,speed);
@@ -100,7 +101,7 @@ test('weight falls from a nudge, reverses beyond the bottom, and settles under f
 });
 test('gravity-free reference keeps original behavior and weight icon grows with mass', () => {
   const oldSettings={...SETTINGS};delete oldSettings.weight;
-  assert.deepEqual(run({angle:.5,velocity:.2},.5,1,oldSettings),run({angle:.5,velocity:.2},.5,1,SETTINGS));
+  assert.deepEqual(run({angle:.5,velocity:.2},.5,1,oldSettings),run({angle:.5,velocity:.2},.5,1,{...SETTINGS,weight:0}));
   assert.equal(weightSize(0),0);assert(weightSize(4)>weightSize(1));
   const oldTake={format:'gears-take',version:1,step:SETTINGS.step,settings:oldSettings,initial:{angle:0,velocity:0},ticks:120,events:[]};
   assert.equal(validateTake(oldTake),oldTake);
@@ -111,4 +112,13 @@ test('undamped weighted motion approximately conserves energy over a swing', () 
   const energy=s=>.5*(settings.inertia+settings.weight*WEIGHT_RADIUS**2)*s.velocity**2+settings.weight*3*WEIGHT_RADIUS*Math.cos(s.angle);
   const initial={angle:.5,velocity:0}, final=run(initial,0,16,settings);
   assert(Math.abs(energy(final)-energy(initial))/(settings.weight*3*WEIGHT_RADIUS)<.02);
+});
+test('half-phase sound crossings handle either direction, wraparound, boundaries and multiple turns', () => {
+  const gear={id:'b',phase:-Math.PI/2,markerAngle:0,z:36};
+  const crossings=(a,b)=>halfPhaseCrossings(-a*2*Math.PI,-b*2*Math.PI,gear);
+  assert.equal(crossings(.4,.6),1); assert.equal(crossings(.6,.4),1);
+  assert.equal(crossings(.99,1.01),0); assert.equal(crossings(.5,.5),0);
+  assert.equal(crossings(.4,.5),1); assert.equal(crossings(.5,.6),0);
+  assert.equal(crossings(.6,.5),1); assert.equal(crossings(.5,.4),0);
+  assert.equal(crossings(.4,2.6),3); assert.equal(crossings(-.6,-.4),1);
 });

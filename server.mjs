@@ -11,7 +11,7 @@ if (process.argv.length > 3 || !/^\d+$/.test(portArgument) || !Number.isInteger(
 }
 const types = { '.html': 'text/html', '.css': 'text/css', '.mjs': 'text/javascript', '.svg': 'image/svg+xml', '.json': 'application/json' };
 // Serve runtime assets only, including when launched from a Git checkout.
-const assets = new Set(['index.html', 'style.css', 'app.mjs', 'physics.mjs', 'diagnostics.mjs', 'gears.svg', 'gear-spec.json']);
+const assets = new Set(['index.html', 'style.css', 'app.mjs', 'physics.mjs', 'diagnostics.mjs', 'gear-sound.mjs', 'gears.svg', 'gear-spec.json']);
 http.createServer(async (req, res) => {
   try {
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);

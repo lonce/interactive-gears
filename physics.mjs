@@ -1,4 +1,4 @@
-export const SETTINGS = Object.freeze({ step: 1 / 120, inertia: 10, maxTorque: 3, viscous: 1.7, friction: 0.45, weight: 0 });
+export const SETTINGS = Object.freeze({ step: 1 / 120, inertia: 2, maxTorque: 3, viscous: 0, friction: 0.4, weight: 4 });
 export const PARAMETERS = Object.freeze({ friction: { min: 0, max: .9, step: .01 }, viscous: { min: 0, max: 3.4, step: .02 }, inertia: { min: 1, max: 19, step: .1 }, weight: { min: 0, max: 4, step: .05 } });
 export const WEIGHT_RADIUS = .78;
 export function gravityTorque(angle, weight = 0) {
@@ -19,6 +19,11 @@ export const clockwisePhase = (rotation, markerAngle = Math.PI / 3) => {
   const turns = (rotation + markerAngle + Math.PI / 2) / (2 * Math.PI);
   return ((turns % 1) + 1) % 1;
 };
+export function halfPhaseCrossings(previousAngle, currentAngle, gear) {
+  const phase = angle => (visualAngle(gear, angle) + gear.markerAngle + Math.PI / 2) / (2 * Math.PI);
+  const previous = phase(previousAngle) - .5, current = phase(currentAngle) - .5;
+  return current > previous ? Math.floor(current) - Math.floor(previous) : Math.ceil(previous) - Math.ceil(current);
+}
 export function orientGears(gears) {
   const result = gears.map(gear => ({ ...gear, markerAngle: Math.PI / 3 }));
   const driver = result.find(gear => gear.id === 'b');
@@ -42,6 +47,14 @@ export function advance(state, input, dt = SETTINGS.step, settings = SETTINGS) {
   let velocity = w + (torque - resistance) / inertia * dt;
   // Friction cannot carry the shaft through rest into reverse motion.
   if (w && Math.sign(velocity) !== Math.sign(w)) velocity = 0;
+  else if (weight > 0) {
+    // Midpoint acceleration avoids artificial energy gain in faster weighted swings.
+    const midVelocity = (w + velocity) / 2, midAngle = state.angle + w * dt / 2;
+    const midTorque = clamp(input) * settings.maxTorque + gravityTorque(midAngle, weight);
+    const midResistance = settings.viscous * midVelocity + settings.friction * Math.sign(midVelocity || midTorque);
+    velocity = w + (midTorque - midResistance) / inertia * dt;
+    if (w && Math.sign(velocity) !== Math.sign(w)) velocity = 0;
+  }
   return { angle: state.angle + (w + velocity) * dt / 2, velocity };
 }
 export function validateTake(take) {
