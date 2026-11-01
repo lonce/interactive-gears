@@ -1,4 +1,10 @@
 export const SETTINGS = Object.freeze({ step: 1 / 120, inertia: 10, maxTorque: 3, viscous: 1.7, friction: 0.45 });
+export const PARAMETERS = Object.freeze({ friction: { min: 0, max: .9, step: .01 }, viscous: { min: 0, max: 3.4, step: .02 }, inertia: { min: 1, max: 19, step: .1 } });
+export function validateSettings(settings) {
+  if (!settings || settings.step !== SETTINGS.step || settings.maxTorque !== SETTINGS.maxTorque ||
+      Object.entries(PARAMETERS).some(([key, range]) => !Number.isFinite(settings[key]) || settings[key] < range.min || settings[key] > range.max)) throw new Error('The recording contains unsupported physics settings.');
+  return settings;
+}
 export const clamp = value => Math.max(-1, Math.min(1, value));
 // SVG/canvas angles increase clockwise, whereas physical positive torque is CCW.
 export const visualAngle = (gear, angle) => gear.phase + (gear.id === 'b' ? -angle : 36 / gear.z * angle);
@@ -31,13 +37,22 @@ export function advance(state, input, dt = SETTINGS.step, settings = SETTINGS) {
   return { angle: state.angle + (w + velocity) * dt / 2, velocity };
 }
 export function validateTake(take) {
-  if (take?.format !== 'gears-take' || take.version !== 1 || take.step !== SETTINGS.step ||
+  if (take?.format !== 'gears-take' || ![1, 2].includes(take.version) || take.step !== SETTINGS.step ||
       !Number.isInteger(take.ticks) || take.ticks < 1 || take.ticks > 120 * 60 * 30 ||
       !Number.isFinite(take.initial?.angle) || !Number.isFinite(take.initial?.velocity) || !Array.isArray(take.events)) throw new Error('This is not a supported gear recording.');
   let previous = -1;
   for (const event of take.events) {
     if (!Number.isInteger(event.tick) || event.tick < previous || event.tick < 0 || event.tick > take.ticks || !Number.isFinite(event.value) || Math.abs(event.value) > 1) throw new Error('The recording contains invalid torque events.');
     previous = event.tick;
+  }
+  validateSettings(take.settings);
+  if (take.version === 2) {
+    if (!Array.isArray(take.settingsEvents)) throw new Error('The recording is missing parameter changes.');
+    previous = -1;
+    for (const event of take.settingsEvents) {
+      if (!Number.isInteger(event.tick) || event.tick < previous || event.tick < 0 || event.tick > take.ticks) throw new Error('The recording contains invalid parameter timing.');
+      validateSettings(event.settings); previous = event.tick;
+    }
   }
   return take;
 }

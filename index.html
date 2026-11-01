@@ -22,6 +22,12 @@
   <button id="reset" class="subtle">Reset mechanism</button>
  </aside>
 </main>
+<section class="parameter-panel" aria-labelledby="parameter-heading">
+ <div class="parameter-heading"><h2 id="parameter-heading">Mechanics</h2><button id="parameter-defaults" type="button">Reset parameters</button></div>
+ <div class="parameter-row"><label for="parameter-friction" title="Constant resistance opposing rotation">Friction</label><input id="parameter-friction" type="range" min="0" max="0.9" step="0.01" value="0.45" aria-describedby="range-friction"><output for="parameter-friction" id="value-friction">0.45</output><span id="range-friction" class="parameter-range">0 — 0.90</span></div>
+ <div class="parameter-row"><label for="parameter-viscous" title="Resistance that increases with speed">Drag</label><input id="parameter-viscous" type="range" min="0" max="3.4" step="0.02" value="1.7" aria-describedby="range-viscous"><output for="parameter-viscous" id="value-viscous">1.70</output><span id="range-viscous" class="parameter-range">0 — 3.40</span></div>
+ <div class="parameter-row"><label for="parameter-inertia" title="Resistance to accelerating and braking">Inertia</label><input id="parameter-inertia" type="range" min="1" max="19" step="0.1" value="10" aria-describedby="range-inertia"><output for="parameter-inertia" id="value-inertia">10.0</output><span id="range-inertia" class="parameter-range">1 — 19</span></div>
+</section>
 <footer>
  <div class="take-controls"><button id="record" class="primary"><span class="record-dot"></span>Record take</button><button id="replay" disabled>Replay</button><button id="save" disabled>Save take</button><button id="movie" disabled>Save movie</button><label class="import">Load take<input id="load" type="file" accept=".json,application/json"></label></div>
  <div id="status" role="status" aria-live="polite">Ready. Drag the slider, or hold ↑ / ↓ while it is focused.</div>

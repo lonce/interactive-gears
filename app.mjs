@@ -1,4 +1,4 @@
-import { SETTINGS, advance, clamp, validateTake, visualAngle, interpolateAngle, clockwisePhase } from './physics.mjs';
+import { SETTINGS, PARAMETERS, advance, clamp, validateTake, visualAngle, interpolateAngle, clockwisePhase } from './physics.mjs';
 import { setupDiagnostics } from './diagnostics.mjs';
 const $ = id => document.getElementById(id);
 const [art, spec] = await Promise.all([fetch('gears.svg').then(r => r.text()), fetch('gear-spec.json').then(r => r.json())]);
@@ -10,6 +10,7 @@ const phaseValues = Object.fromEntries(spec.gears.map(g => [g.id, $(`phase-${g.i
 let state = { angle: 0, velocity: 0 }, torque = 0, pointer = null, keys = new Set();
 let previousState = state;
 let take = null, recording = null, playback = null, accumulator = 0, previousTime = null;
+let physicsSettings = { ...SETTINGS };
 const speedValue = $('speed-value'), directionValue = $('direction');
 let lastReadoutTime = -Infinity, lastPaintedAngle = null;
 const frameSamples = []; let lastDiagnosticsTime = 0;
@@ -37,6 +38,27 @@ if (new URLSearchParams(location.search).get('renderer') === 'bitmap' && !diagno
   }
   $('artwork').dataset.renderer = 'bitmap';
 } else $('artwork').dataset.renderer = 'svg';
+function setParameters(values, log = true) {
+  physicsSettings = { ...physicsSettings, ...values };
+  for (const key of Object.keys(PARAMETERS)) {
+    $(`parameter-${key}`).value = physicsSettings[key];
+    $(`value-${key}`).textContent = physicsSettings[key].toFixed(key === 'inertia' ? 1 : 2);
+  }
+  if (recording && log) {
+    const event = { tick: recording.ticks, settings: { ...physicsSettings } };
+    if (recording.settingsEvents.at(-1)?.tick === event.tick) recording.settingsEvents[recording.settingsEvents.length - 1] = event;
+    else recording.settingsEvents.push(event);
+  }
+}
+for (const [key, range] of Object.entries(PARAMETERS)) {
+  const control = $(`parameter-${key}`);
+  control.min = range.min; control.max = range.max; control.step = range.step;
+  control.addEventListener('input', () => {
+    if (!playback && !diagnostics?.active) setParameters({ [key]: Number(control.value) });
+  });
+}
+$('parameter-defaults').addEventListener('click', () => { if (!playback && !diagnostics?.active) setParameters(SETTINGS); });
+setParameters(SETTINGS, false);
 function status(message) { $('status').textContent = message; }
 function setTorque(value, log = true) {
   torque = clamp(Number(value) || 0);
@@ -90,6 +112,8 @@ function updateButtons() {
   $('reset').disabled = !!recording || busy;
   $('load').disabled = !!recording || busy;
   $('torque-slider').setAttribute('aria-disabled', String(busy));
+  for (const key of Object.keys(PARAMETERS)) $(`parameter-${key}`).disabled = busy;
+  $('parameter-defaults').disabled = busy;
 }
 function angles(angle = state.angle) { return spec.gears.map(g => visualAngle(g, angle)); }
 function paint(angle = state.angle, time = Infinity) {
@@ -133,11 +157,13 @@ function drawMovie(rotations) {
 function step() {
   previousState = state;
   if (playback) {
+    const changes = take.settingsEvents || [];
+    while (playback.settingsCursor < changes.length && changes[playback.settingsCursor].tick <= playback.tick) setParameters(changes[playback.settingsCursor++].settings, false);
     while (playback.cursor < take.events.length && take.events[playback.cursor].tick <= playback.tick) setTorque(take.events[playback.cursor++].value, false);
-    state = advance(state, torque); playback.tick++;
+    state = advance(state, torque, SETTINGS.step, physicsSettings); playback.tick++;
     if (playback.tick >= take.ticks) finishReplay();
   } else {
-    state = advance(state, torque);
+    state = advance(state, torque, SETTINGS.step, physicsSettings);
     if (recording) {
       recording.ticks++;
       if (recording.ticks >= 120 * 60 * 30) stopRecording();
@@ -188,11 +214,11 @@ function stopRecording() {
 $('record').addEventListener('click', () => {
   if (recording) { stopRecording(); return; }
   release(); accumulator = 0; previousState = state;
-  recording = { format: 'gears-take', version: 1, step: SETTINGS.step, settings: SETTINGS, initial: { ...state }, ticks: 0, events: [{ tick: 0, value: 0 }] };
-  status('Recording your torque gestures. Click Stop recording when finished.'); updateButtons();
+  recording = { format: 'gears-take', version: 2, step: SETTINGS.step, settings: { ...physicsSettings }, settingsEvents: [], initial: { ...state }, ticks: 0, events: [{ tick: 0, value: 0 }] };
+  status('Recording torque and parameter changes. Click Stop recording when finished.'); updateButtons();
 });
 function startReplay() {
-  release(); state = { ...take.initial }; previousState = state; playback = { tick: 0, cursor: 0 }; accumulator = 0; previousTime = null;
+  release(); setParameters(take.settings, false); state = { ...take.initial }; previousState = state; playback = { tick: 0, cursor: 0, settingsCursor: 0 }; accumulator = 0; previousTime = null;
   updateButtons(); paint();
 }
 function finishReplay() {
@@ -208,7 +234,6 @@ $('load').addEventListener('change', async event => {
     const file = event.target.files[0]; if (!file) return;
     if (file.size > 10 * 1024 * 1024) throw new Error('Choose a take smaller than 10 MB.');
     const candidate = validateTake(JSON.parse(await file.text()));
-    if (JSON.stringify(candidate.settings) !== JSON.stringify(SETTINGS)) throw new Error('This take uses different physics settings.');
     take = candidate; status(`Loaded ${(take.ticks * SETTINGS.step).toFixed(2)} second take.`); updateButtons();
   } catch (error) { status(error.message); }
   event.target.value = '';

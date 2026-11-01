@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advance, SETTINGS, validateTake, visualAngle, interpolateAngle, clockwisePhase, orientGears } from './physics.mjs';
-function run(state, value, seconds) { for (let i = 0; i < Math.round(seconds / SETTINGS.step); i++) state = advance(state, value); return state; }
+import { advance, SETTINGS, PARAMETERS, validateTake, visualAngle, interpolateAngle, clockwisePhase, orientGears } from './physics.mjs';
+function run(state, value, seconds, settings = SETTINGS) { for (let i = 0; i < Math.round(seconds / SETTINGS.step); i++) state = advance(state, value, SETTINGS.step, settings); return state; }
 test('zero torque stays at rest', () => assert.deepEqual(run({ angle: 0, velocity: 0 }, 0, 10), { angle: 0, velocity: 0 }));
 test('positive torque turns B counterclockwise; negative is symmetric', () => {
   const a = run({ angle: 0, velocity: 0 }, 1, 2), b = run({ angle: 0, velocity: 0 }, -1, 2);
@@ -62,4 +62,25 @@ test('initial markers are nearest vertical while both meshes remain locked', () 
       assert(Math.abs(residual/tau-Math.round(residual/tau))<1e-10);
     }
   }
+});
+test('each parameter default is the exact slider midpoint', () => {
+  for (const [key, range] of Object.entries(PARAMETERS)) assert.equal((range.min + range.max) / 2, SETTINGS[key]);
+});
+test('inertia changes acceleration; friction and drag independently slow coasting', () => {
+  const rest = { angle: 0, velocity: 0 }, moving = { angle: 0, velocity: .5 };
+  assert(run(rest,1,.5,{...SETTINGS,inertia:1}).velocity > run(rest,1,.5,{...SETTINGS,inertia:19}).velocity);
+  const free = {...SETTINGS,friction:0,viscous:0};
+  assert.equal(run(moving,0,2,free).velocity,.5);
+  assert(run(moving,0,2,{...free,friction:.9}).velocity < .5);
+  assert(run(moving,0,2,{...free,viscous:3.4}).velocity < .5);
+});
+test('take validation accepts old settings and timed parameter changes, rejecting invalid inertia and timing', () => {
+  const legacy = { format:'gears-take',version:1,step:SETTINGS.step,settings:{...SETTINGS},initial:{angle:0,velocity:0},ticks:240,events:[{tick:0,value:1},{tick:120,value:0}] };
+  assert.equal(validateTake(legacy),legacy);
+  const modern = {...legacy,version:2,settingsEvents:[{tick:120,settings:{...SETTINGS,friction:0,viscous:0,inertia:19}}]};
+  assert.equal(validateTake(modern),modern);
+  let state = run(legacy.initial,1,1,modern.settings), speed = state.velocity;
+  state = run(state,0,1,modern.settingsEvents[0].settings); assert.equal(state.velocity,speed);
+  assert.throws(()=>validateTake({...modern,settingsEvents:[{tick:120,settings:{...SETTINGS,inertia:0}}]}));
+  assert.throws(()=>validateTake({...modern,settingsEvents:[{tick:241,settings:SETTINGS}]}));
 });

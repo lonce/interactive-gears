@@ -53,6 +53,7 @@ export async function setupDiagnostics({ svg, rotors, spec, gearImages }) {
     savePhase(); active = false; pending = true; display('svg');
     document.querySelector('aside').inert = false;
     document.querySelector('.take-controls').inert = false;
+    document.querySelector('.parameter-panel').inert = false;
     panel.querySelector('button').disabled = false;
     panel.dataset.report = JSON.stringify(report);
     saveButton.disabled = false;
@@ -63,6 +64,7 @@ export async function setupDiagnostics({ svg, rotors, spec, gearImages }) {
     report = { userAgent: navigator.userAgent, viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, date: new Date().toISOString(), durationPerPhaseMs: duration, discardedWarmupMs: warmup, supportedObservers: PerformanceObserver.supportedEntryTypes, phases: [] };
     index = -1; started = phaseStart = null; phase = null; active = true; result.textContent = ''; panel.querySelector('button').disabled = true; saveButton.disabled = true;
     document.querySelector('aside').inert = true; document.querySelector('.take-controls').inert = true;
+    document.querySelector('.parameter-panel').inert = true;
     document.querySelector('main').scrollIntoView({ block: 'start' });
   });
   saveButton.addEventListener('click', () => {
