@@ -1,4 +1,4 @@
-import { SETTINGS, PARAMETERS, advance, clamp, validateTake, visualAngle, interpolateAngle, clockwisePhase } from './physics.mjs';
+import { SETTINGS, PARAMETERS, WEIGHT_RADIUS, weightSize, advance, clamp, validateTake, visualAngle, interpolateAngle, clockwisePhase } from './physics.mjs';
 import { setupDiagnostics } from './diagnostics.mjs';
 const $ = id => document.getElementById(id);
 const [art, spec] = await Promise.all([fetch('gears.svg').then(r => r.text()), fetch('gear-spec.json').then(r => r.json())]);
@@ -6,6 +6,11 @@ $('artwork').innerHTML = art;
 const svg = $('artwork').querySelector('svg');
 const rotors = Object.fromEntries(spec.gears.map(g => [g.id, svg.querySelector(`#rotor-${g.id}`)]));
 const markers = Object.fromEntries(spec.gears.map(g => [g.id, svg.querySelector(`#marker-${g.id}`)]));
+const driverGear = spec.gears.find(gear => gear.id === 'b');
+const weightRadius = spec.module * (driverGear.z / 2 + 1) * WEIGHT_RADIUS;
+const weightIcon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+weightIcon.id = 'weight-icon'; weightIcon.setAttribute('fill', '#d8a05b'); weightIcon.setAttribute('stroke', '#ffe0a8'); weightIcon.setAttribute('stroke-width', '2.5');
+markers.b.append(weightIcon);
 const phaseValues = Object.fromEntries(spec.gears.map(g => [g.id, $(`phase-${g.id}`)]));
 let state = { angle: 0, velocity: 0 }, torque = 0, pointer = null, keys = new Set();
 let previousState = state;
@@ -44,6 +49,10 @@ function setParameters(values, log = true) {
     $(`parameter-${key}`).value = physicsSettings[key];
     $(`value-${key}`).textContent = physicsSettings[key].toFixed(key === 'inertia' ? 1 : 2);
   }
+  const size = weightSize(physicsSettings.weight), x = weightRadius * Math.cos(driverGear.markerAngle), y = weightRadius * Math.sin(driverGear.markerAngle);
+  weightIcon.setAttribute('points', Array.from({ length: 6 }, (_, i) => { const a = i * Math.PI / 3; return `${x + size * Math.cos(a)},${y + size * Math.sin(a)}`; }).join(' '));
+  weightIcon.setAttribute('visibility', size > 0 ? 'visible' : 'hidden');
+  weightIcon.setAttribute('data-weight', physicsSettings.weight);
   if (recording && log) {
     const event = { tick: recording.ticks, settings: { ...physicsSettings } };
     if (recording.settingsEvents.at(-1)?.tick === event.tick) recording.settingsEvents[recording.settingsEvents.length - 1] = event;
@@ -151,6 +160,12 @@ function drawMovie(rotations) {
     const bearing = rotations[i] + g.markerAngle, markerRadius = spec.module * (g.z / 2 + 1);
     ctx.beginPath(); ctx.moveTo(g.x, g.y); ctx.lineTo(g.x + markerRadius * Math.cos(bearing), g.y + markerRadius * Math.sin(bearing));
     ctx.strokeStyle = '#ff3434'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
+    if (g.id === 'b' && physicsSettings.weight > 0) {
+      const x = g.x + weightRadius * Math.cos(bearing), y = g.y + weightRadius * Math.sin(bearing), size = weightSize(physicsSettings.weight);
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) { const a = rotations[i] + k * Math.PI / 3; const px = x + size * Math.cos(a), py = y + size * Math.sin(a); if (k) ctx.lineTo(px, py); else ctx.moveTo(px, py); }
+      ctx.closePath(); ctx.fillStyle = '#d8a05b'; ctx.fill(); ctx.strokeStyle = '#ffe0a8'; ctx.lineWidth = 2.5; ctx.stroke();
+    }
     ctx.textAlign = 'center'; ctx.fillStyle = '#f1f5f6'; ctx.font = 'bold 36px Arial'; ctx.fillText(g.id, g.x, g.y + 12);
   });
 }
@@ -158,7 +173,7 @@ function step() {
   previousState = state;
   if (playback) {
     const changes = take.settingsEvents || [];
-    while (playback.settingsCursor < changes.length && changes[playback.settingsCursor].tick <= playback.tick) setParameters(changes[playback.settingsCursor++].settings, false);
+    while (playback.settingsCursor < changes.length && changes[playback.settingsCursor].tick <= playback.tick) setParameters({ ...SETTINGS, ...changes[playback.settingsCursor++].settings }, false);
     while (playback.cursor < take.events.length && take.events[playback.cursor].tick <= playback.tick) setTorque(take.events[playback.cursor++].value, false);
     state = advance(state, torque, SETTINGS.step, physicsSettings); playback.tick++;
     if (playback.tick >= take.ticks) finishReplay();
@@ -218,7 +233,7 @@ $('record').addEventListener('click', () => {
   status('Recording torque and parameter changes. Click Stop recording when finished.'); updateButtons();
 });
 function startReplay() {
-  release(); setParameters(take.settings, false); state = { ...take.initial }; previousState = state; playback = { tick: 0, cursor: 0, settingsCursor: 0 }; accumulator = 0; previousTime = null;
+  release(); setParameters({ ...SETTINGS, ...take.settings }, false); state = { ...take.initial }; previousState = state; playback = { tick: 0, cursor: 0, settingsCursor: 0 }; accumulator = 0; previousTime = null;
   updateButtons(); paint();
 }
 function finishReplay() {

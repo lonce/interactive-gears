@@ -1,8 +1,14 @@
-export const SETTINGS = Object.freeze({ step: 1 / 120, inertia: 10, maxTorque: 3, viscous: 1.7, friction: 0.45 });
-export const PARAMETERS = Object.freeze({ friction: { min: 0, max: .9, step: .01 }, viscous: { min: 0, max: 3.4, step: .02 }, inertia: { min: 1, max: 19, step: .1 } });
+export const SETTINGS = Object.freeze({ step: 1 / 120, inertia: 10, maxTorque: 3, viscous: 1.7, friction: 0.45, weight: 0 });
+export const PARAMETERS = Object.freeze({ friction: { min: 0, max: .9, step: .01 }, viscous: { min: 0, max: 3.4, step: .02 }, inertia: { min: 1, max: 19, step: .1 }, weight: { min: 0, max: 4, step: .05 } });
+export const WEIGHT_RADIUS = .78;
+export function gravityTorque(angle, weight = 0) {
+  const sine = Math.sin(angle);
+  return weight * 3 * WEIGHT_RADIUS * (Math.abs(sine) < 1e-12 ? 0 : sine);
+}
+export const weightSize = weight => weight > 0 ? 9 + 15 * Math.sqrt(weight) : 0;
 export function validateSettings(settings) {
   if (!settings || settings.step !== SETTINGS.step || settings.maxTorque !== SETTINGS.maxTorque ||
-      Object.entries(PARAMETERS).some(([key, range]) => !Number.isFinite(settings[key]) || settings[key] < range.min || settings[key] > range.max)) throw new Error('The recording contains unsupported physics settings.');
+      Object.entries(PARAMETERS).some(([key, range]) => { const value = key === 'weight' && settings[key] === undefined ? 0 : settings[key]; return !Number.isFinite(value) || value < range.min || value > range.max; })) throw new Error('The recording contains unsupported physics settings.');
   return settings;
 }
 export const clamp = value => Math.max(-1, Math.min(1, value));
@@ -27,11 +33,13 @@ export function orientGears(gears) {
   return result;
 }
 export function advance(state, input, dt = SETTINGS.step, settings = SETTINGS) {
-  const torque = clamp(input) * settings.maxTorque;
+  const weight = settings.weight ?? 0;
+  const torque = clamp(input) * settings.maxTorque + gravityTorque(state.angle, weight);
   const w = state.velocity;
   if (Math.abs(w) < 1e-10 && Math.abs(torque) <= settings.friction) return { angle: state.angle, velocity: 0 };
   const resistance = settings.viscous * w + settings.friction * Math.sign(w || torque);
-  let velocity = w + (torque - resistance) / settings.inertia * dt;
+  const inertia = settings.inertia + weight * WEIGHT_RADIUS ** 2;
+  let velocity = w + (torque - resistance) / inertia * dt;
   // Friction cannot carry the shaft through rest into reverse motion.
   if (w && Math.sign(velocity) !== Math.sign(w)) velocity = 0;
   return { angle: state.angle + (w + velocity) * dt / 2, velocity };

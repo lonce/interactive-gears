@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advance, SETTINGS, PARAMETERS, validateTake, visualAngle, interpolateAngle, clockwisePhase, orientGears } from './physics.mjs';
+import { advance, SETTINGS, PARAMETERS, WEIGHT_RADIUS, gravityTorque, weightSize, validateTake, visualAngle, interpolateAngle, clockwisePhase, orientGears } from './physics.mjs';
 function run(state, value, seconds, settings = SETTINGS) { for (let i = 0; i < Math.round(seconds / SETTINGS.step); i++) state = advance(state, value, SETTINGS.step, settings); return state; }
 test('zero torque stays at rest', () => assert.deepEqual(run({ angle: 0, velocity: 0 }, 0, 10), { angle: 0, velocity: 0 }));
 test('positive torque turns B counterclockwise; negative is symmetric', () => {
@@ -64,7 +64,8 @@ test('initial markers are nearest vertical while both meshes remain locked', () 
   }
 });
 test('each parameter default is the exact slider midpoint', () => {
-  for (const [key, range] of Object.entries(PARAMETERS)) assert.equal((range.min + range.max) / 2, SETTINGS[key]);
+  for (const [key, range] of Object.entries(PARAMETERS).filter(([key])=>key!=='weight')) assert.equal((range.min + range.max) / 2, SETTINGS[key]);
+  assert.equal(SETTINGS.weight,0);
 });
 test('inertia changes acceleration; friction and drag independently slow coasting', () => {
   const rest = { angle: 0, velocity: 0 }, moving = { angle: 0, velocity: .5 };
@@ -83,4 +84,31 @@ test('take validation accepts old settings and timed parameter changes, rejectin
   state = run(state,0,1,modern.settingsEvents[0].settings); assert.equal(state.velocity,speed);
   assert.throws(()=>validateTake({...modern,settingsEvents:[{tick:120,settings:{...SETTINGS,inertia:0}}]}));
   assert.throws(()=>validateTake({...modern,settingsEvents:[{tick:241,settings:SETTINGS}]}));
+});
+test('gravity pulls either side down and vanishes at top, bottom, or zero mass', () => {
+  assert.equal(gravityTorque(0,2),0); assert.equal(gravityTorque(Math.PI,2),0);
+  assert(gravityTorque(-Math.PI/2,2)<0); assert(gravityTorque(Math.PI/2,2)>0);
+  assert.equal(gravityTorque(.6,2),2*gravityTorque(.6,1));
+  assert.equal(gravityTorque(.6,0),0);
+});
+test('weight falls from a nudge, reverses beyond the bottom, and settles under friction', () => {
+  const settings={...SETTINGS,weight:2};
+  const falling=run({angle:.5,velocity:0},0,1,settings); assert(falling.velocity>0 && falling.angle>.5);
+  const returning=run({angle:Math.PI+.5,velocity:0},0,1,settings); assert(returning.velocity<0);
+  const settled=run({angle:.5,velocity:0},0,120,settings);
+  assert.equal(settled.velocity,0); assert(Math.abs(settled.angle-Math.PI)<.2);
+});
+test('gravity-free reference keeps original behavior and weight icon grows with mass', () => {
+  const oldSettings={...SETTINGS};delete oldSettings.weight;
+  assert.deepEqual(run({angle:.5,velocity:.2},.5,1,oldSettings),run({angle:.5,velocity:.2},.5,1,SETTINGS));
+  assert.equal(weightSize(0),0);assert(weightSize(4)>weightSize(1));
+  const oldTake={format:'gears-take',version:1,step:SETTINGS.step,settings:oldSettings,initial:{angle:0,velocity:0},ticks:120,events:[]};
+  assert.equal(validateTake(oldTake),oldTake);
+  assert.throws(()=>validateTake({...oldTake,settings:{...oldSettings,weight:5}}));
+});
+test('undamped weighted motion approximately conserves energy over a swing', () => {
+  const settings={...SETTINGS,weight:2,friction:0,viscous:0};
+  const energy=s=>.5*(settings.inertia+settings.weight*WEIGHT_RADIUS**2)*s.velocity**2+settings.weight*3*WEIGHT_RADIUS*Math.cos(s.angle);
+  const initial={angle:.5,velocity:0}, final=run(initial,0,16,settings);
+  assert(Math.abs(energy(final)-energy(initial))/(settings.weight*3*WEIGHT_RADIUS)<.02);
 });
