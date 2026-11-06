@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GearSound } from './gear-sound.mjs';
+import { GearSound, clickRateForVelocity } from './gear-sound.mjs';
 
 test('phase flashes work before audio loads and while muted; reset does not create crossings', () => {
   const original = Object.getOwnPropertyDescriptor(globalThis, 'document');
@@ -53,7 +53,7 @@ test('only explicit lever activation unlocks audio, preserving the context durin
   let finishModules;
   const modules = new Promise(resolve => { finishModules = resolve; });
   class Context {
-    constructor() { this.state = 'suspended'; this.destination = {}; this.resumeCalls = 0; this.primeCalls = 0; this.sampleRate = 48000; contexts.push(this); }
+    constructor() { this.state = 'suspended'; this.destination = {}; this.currentTime = 0; this.resumeCalls = 0; this.primeCalls = 0; this.sampleRate = 48000; contexts.push(this); }
     addEventListener() {}
     createGain() { return { gain: {}, connect() {}, disconnect() {} }; }
     createBuffer() { return {}; }
@@ -66,8 +66,8 @@ test('only explicit lever activation unlocks audio, preserving the context durin
   }
   class AudioSystem {
     constructor() { this.context = new Context(); this.masterGainNode = this.context.createGain(); }
-    async createSound() {
-      const voice = { context: this.context, getParameter: () => ({min:70,max:90}), setParameterNormalized() {}, play() { this.played = true; }, event() {}, kill() {} };
+    async createSound(SoundClass, name) {
+      const voice = { name, context: this.context, getParameter: () => ({min:70,max:90}), setParameterNormalized() {}, play() { this.played = true; }, event() {}, kill() {}, workletNode: { parameters: new Map(['active','clickRate'].map(key => [key,{setValueAtTime(){},setTargetAtTime(){}}])) } };
       voices.push(voice); return voice;
     }
   }
@@ -87,11 +87,12 @@ test('only explicit lever activation unlocks audio, preserving the context durin
     await Promise.resolve();
     assert.equal(sound.context.state,'running');
     assert.equal(sound.context.primeCalls,1,'primes output even when resume immediately reports running');
-    finishModules([{AudioSystem},{WG4PresetPlink:class {}}]);
+    finishModules([{AudioSystem},{WG4PresetPlink:class {}},{ClickerWorkletSoundModel:class {}}]);
     assert.equal(await sound.loading,true);
     assert.equal(sound.system.context,contexts[0]);
     assert.equal(contexts[1].state,'closed');
     assert(voices.every(voice => voice.context === contexts[0]));
+    assert.equal(voices.filter(voice => voice.name === 'gear-b-clicker').length,1,'one clicker instance for the whole mechanism');
     sound.follow(-.4*2*Math.PI); sound.follow(-.6*2*Math.PI);
     assert.equal(sound.hits.b,1,'rings on a crossing without a second touch');
     assert.equal(voices[0].played,true);
@@ -102,5 +103,43 @@ test('only explicit lever activation unlocks audio, preserving the context durin
   } finally {
     if (originalDocument) Object.defineProperty(globalThis,'document',originalDocument); else delete globalThis.document;
     if (originalWindow) Object.defineProperty(globalThis,'window',originalWindow); else delete globalThis.window;
+  }
+});
+
+test('click rate follows absolute B speed at 36 clicks per turn, capped at 20 Hz', () => {
+  assert.equal(clickRateForVelocity(0),0);
+  assert.equal(clickRateForVelocity(Math.PI),18);
+  assert.equal(clickRateForVelocity(-Math.PI),18);
+  assert.equal(clickRateForVelocity(2*Math.PI),20);
+  assert(clickRateForVelocity(.01)>0 && clickRateForVelocity(.01)<1);
+  assert.equal(clickRateForVelocity(NaN),0);
+});
+
+test('one clicker runs continuously while moving and is silent at rest, while muted, or hidden', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis,'document');
+  const documentState = {hidden:false};
+  Object.defineProperty(globalThis,'document',{configurable:true,value:documentState});
+  try {
+    const events = [], context = {state:'running',currentTime:0};
+    const parameter = name => ({setValueAtTime(value){events.push([name,value]);},setTargetAtTime(value){events.push([name,value]);}});
+    const clicker = {play(){events.push(['play']);},kill(){events.push(['kill']);},workletNode:{parameters:new Map([['active',parameter('active')],['clickRate',parameter('rate')]])}};
+    const sound = Object.assign(Object.create(GearSound.prototype),{clicker,context,ready:true,enabled:true,voices:{},clickerActive:false,lastClickUpdate:-Infinity,lastClickRate:0,stateElement:{dataset:{}}});
+    sound.updateClicker(.1,false);
+    assert.equal(events.filter(e=>e[0]==='play').length,1);
+    assert.deepEqual(events.find(e=>e[0]==='active'),['active',1]);
+    assert(events.find(e=>e[0]==='rate')[1]<1,'slow rates use the worklet range below the model UI minimum');
+    context.currentTime=1; sound.updateClicker(-.2,false);
+    assert.equal(events.filter(e=>e[0]==='play').length,1,'speed changes reuse the running voice');
+    assert.equal(events.filter(e=>e[0]==='rate').at(-1)[1],clickRateForVelocity(.2));
+    sound.updateClicker(0,false); assert.deepEqual(events.at(-1),['active',0]);
+    const stoppedLength=events.length; sound.updateClicker(1,true); assert.equal(events.length,stoppedLength);
+    sound.updateClicker(1,false); documentState.hidden=true; sound.updateClicker(1,false);
+    assert.deepEqual(events.at(-1),['active',0]);
+    documentState.hidden=false; sound.updateClicker(1,false); sound.reset(0);
+    assert.deepEqual(events.at(-1),['kill']);
+    assert.equal(sound.stateElement.dataset.clickRate,'0.00');
+    assert.equal(sound.clicker,clicker);
+  } finally {
+    if(original) Object.defineProperty(globalThis,'document',original); else delete globalThis.document;
   }
 });

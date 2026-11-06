@@ -65,7 +65,7 @@ async function startWithSound() {
     const running = await unlocked;
     if (!await sound.loading) return;
     if (!running || sound.context.state !== 'running') throw new Error('Tap the lever again to enable audio.');
-    releaseStartLock(); status('Sound is on. Push and hold the torque slider.');
+    releaseStartLock(); status('');
   } catch (error) {
     $('start-label').textContent = 'Sound on'; $('start-hint').textContent = error.message;
   } finally {
@@ -141,7 +141,7 @@ for (const [key, range] of Object.entries(PARAMETERS)) {
 }
 $('parameter-defaults').addEventListener('click', () => { if (!playback && !diagnostics?.active) setParameters(SETTINGS); });
 setParameters(SETTINGS, false);
-function status(message) { $('status').textContent = message; }
+function status(message) { $('status').textContent = message; $('status').hidden = !message; }
 function setTorque(value, log = true) {
   torque = clamp(Number(value) || 0);
   $('torque-value').textContent = `${torque > 0 ? '+' : ''}${torque.toFixed(2)}`;
@@ -203,7 +203,7 @@ function updateButtons() {
 }
 function angles(angle = state.angle) { return spec.gears.map(g => visualAngle(g, angle)); }
 function paint(angle = state.angle, time = Infinity) {
-  sound.follow(angle, !!diagnostics?.active);
+  sound.follow(angle, !!diagnostics?.active, state.velocity);
   for (const [id, until] of flashes) if (performance.now() >= until) {
     const line = markers[id].querySelector('line');
     line.setAttribute('stroke', '#ff3434'); line.setAttribute('stroke-width', '5');
@@ -328,7 +328,7 @@ function finishReplay() {
 }
 $('replay').addEventListener('click', () => { startReplay(); status('Replaying the recorded torque inputs.'); });
 $('save').addEventListener('click', () => download(new Blob([JSON.stringify(take, null, 2)], { type: 'application/json' }), 'gear-take.json'));
-$('reset').addEventListener('click', () => { release(); state = { angle: INITIAL_ANGLE, velocity: 0 }; sound.reset(INITIAL_ANGLE); previousState = state; accumulator = 0; paint(); status('Mechanism reset. Saved take is retained.'); });
+$('reset').addEventListener('click', () => { release(); state = { angle: INITIAL_ANGLE, velocity: 0 }; sound.reset(INITIAL_ANGLE); previousState = state; accumulator = 0; paint(); status(''); });
 $('load').addEventListener('change', async event => {
   try {
     const file = event.target.files[0]; if (!file) return;
