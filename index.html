@@ -7,21 +7,21 @@
  <section class="machine" aria-label="Interactive gear mechanism">
   <div id="artwork" class="artwork"></div>
  </section>
- <aside>
+ </main>
+ <aside aria-label="Main torque control">
   <div class="control-title"><span class="eyebrow">APPLIED TORQUE</span><output id="torque-value">0.00</output></div>
   <p class="hint">Push and hold. Release to coast.</p>
   <div class="slider-area">
-   <div class="direction top">↶<span>COUNTERCLOCKWISE</span><b>+1</b></div>
-   <div id="torque-slider" class="slider" role="slider" aria-label="Torque applied to gear B. Up is counterclockwise; down is clockwise." aria-orientation="vertical" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0" tabindex="0">
+   <div class="direction bottom">↷<span>CLOCKWISE</span><b>−1</b></div>
+   <div id="torque-slider" class="slider" role="slider" aria-label="Torque applied to gear B. Right is counterclockwise; left is clockwise." aria-orientation="horizontal" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0" tabindex="0">
     <div class="rail"></div><div class="zero-line"></div><div id="torque-fill" class="torque-fill"></div><span class="zero-label">0</span><div id="thumb" class="thumb"><span></span><span></span><span></span></div>
    </div>
-   <div class="direction bottom"><b>−1</b><span>CLOCKWISE</span>↷</div>
+   <div class="direction top">↶<span>COUNTERCLOCKWISE</span><b>+1</b></div>
   </div>
   <div class="readout"><span>SHAFT B</span><strong id="speed"><span id="speed-value">0.00</span> <small>rpm</small></strong><span id="direction">At rest</span></div>
   <div class="phases"><span>PHASE · CLOCKWISE</span><div><label>a <output id="phase-a" aria-label="Gear A phase">0.000</output></label><label>b <output id="phase-b" aria-label="Gear B phase">0.000</output></label><label>c <output id="phase-c" aria-label="Gear C phase">0.000</output></label></div></div>
   <button id="reset" class="subtle">Reset mechanism</button>
  </aside>
-</main>
 <section class="parameter-panel" aria-labelledby="parameter-heading">
  <div class="parameter-heading"><h2 id="parameter-heading">Mechanics</h2><button id="parameter-defaults" type="button">Reset parameters</button></div>
  <div class="parameter-row"><label for="parameter-friction" title="Constant resistance opposing rotation">Friction</label><input id="parameter-friction" type="range" min="0" max="0.9" step="0.01" value="0.4" aria-describedby="range-friction"><output for="parameter-friction" id="value-friction">0.40</output><span id="range-friction" class="parameter-range">0 — 0.90</span></div>
@@ -31,7 +31,7 @@
 </section>
 <footer>
  <div class="take-controls"><button id="record" class="primary"><span class="record-dot"></span>Record take</button><button id="replay" disabled>Replay</button><button id="save" disabled>Save take</button><button id="movie" disabled>Save movie</button><label class="import">Load take<input id="load" type="file" accept=".json,application/json"></label></div>
- <button id="sound-toggle" type="button" aria-pressed="false" disabled>Sound loading…</button><div id="status" role="status" aria-live="polite">Ready. Drag the slider, or hold ↑ / ↓ while it is focused.</div>
+ <button id="sound-toggle" type="button" aria-pressed="false" disabled>Sound loading…</button><div id="status" role="status" aria-live="polite">Drag and hold, or hold ← / →. Release to coast.</div>
 </footer>
 <script type="module" src="app.mjs"></script>
 </body></html>

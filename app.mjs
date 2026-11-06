@@ -5,15 +5,28 @@ const $ = id => document.getElementById(id);
 const [art, spec] = await Promise.all([fetch('gears.svg').then(r => r.text()), fetch('gear-spec.json').then(r => r.json())]);
 $('artwork').innerHTML = art;
 const svg = $('artwork').querySelector('svg');
+// Fit the live stage to the mechanism rather than the movie's 16:9 canvas.
+const bounds = spec.gears.map(g => ({ x: g.x, y: g.y, r: spec.module * (g.z / 2 + 1) + 24 }));
+const left = Math.min(...bounds.map(g => g.x - g.r)), top = Math.min(...bounds.map(g => g.y - g.r));
+svg.setAttribute('viewBox', `${left} ${top} ${Math.max(...bounds.map(g => g.x + g.r)) - left} ${Math.max(...bounds.map(g => g.y + g.r)) - top}`);
 const rotors = Object.fromEntries(spec.gears.map(g => [g.id, svg.querySelector(`#rotor-${g.id}`)]));
 const markers = Object.fromEntries(spec.gears.map(g => [g.id, svg.querySelector(`#marker-${g.id}`)]));
 const driverGear = spec.gears.find(gear => gear.id === 'b');
 const weightRadius = spec.module * (driverGear.z / 2 + 1) * WEIGHT_RADIUS;
-const weightIcon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-weightIcon.id = 'weight-icon'; weightIcon.setAttribute('fill', '#d8a05b'); weightIcon.setAttribute('stroke', '#ffe0a8'); weightIcon.setAttribute('stroke-width', '2.5');
+const weightIcon = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+weightIcon.id = 'weight-icon';
+weightIcon.innerHTML = '<path fill="#050505" stroke="#a4adb3" stroke-width="2.5" d="M -0.45 -0.75 L 0.45 -0.75 L 1 0.8 L -1 0.8 Z"/><text text-anchor="middle" dominant-baseline="central" fill="white" font-family="Arial,sans-serif" font-weight="700" font-size="1.15">w</text>';
+// Scale the silhouette and lettering together, keeping its top toward the rim.
+weightIcon.firstElementChild.setAttribute('vector-effect', 'non-scaling-stroke');
 markers.b.append(weightIcon);
 const phaseValues = Object.fromEntries(spec.gears.map(g => [g.id, $(`phase-${g.id}`)]));
-const sound = new GearSound(spec.gears, $('sound-toggle'));
+const flashes = new Map();
+const sound = new GearSound(spec.gears, $('sound-toggle'), id => {
+  flashes.set(id, performance.now() + 170);
+  markers[id].querySelector('line').setAttribute('stroke', '#fff4bc');
+  markers[id].querySelector('line').setAttribute('stroke-width', '10');
+  markers[id].dataset.flash = 'true';
+});
 let state = { angle: 0, velocity: 0 }, torque = 0, pointer = null, keys = new Set();
 let previousState = state;
 let take = null, recording = null, playback = null, accumulator = 0, previousTime = null;
@@ -52,7 +65,7 @@ function setParameters(values, log = true) {
     $(`value-${key}`).textContent = physicsSettings[key].toFixed(key === 'inertia' ? 1 : 2);
   }
   const size = weightSize(physicsSettings.weight), x = weightRadius * Math.cos(driverGear.markerAngle), y = weightRadius * Math.sin(driverGear.markerAngle);
-  weightIcon.setAttribute('points', Array.from({ length: 6 }, (_, i) => { const a = i * Math.PI / 3; return `${x + size * Math.cos(a)},${y + size * Math.sin(a)}`; }).join(' '));
+  weightIcon.setAttribute('transform', `translate(${x} ${y}) rotate(${driverGear.markerAngle * 180 / Math.PI + 90}) scale(${size})`);
   weightIcon.setAttribute('visibility', size > 0 ? 'visible' : 'hidden');
   weightIcon.setAttribute('data-weight', physicsSettings.weight);
   if (recording && log) {
@@ -75,9 +88,9 @@ function setTorque(value, log = true) {
   torque = clamp(Number(value) || 0);
   $('torque-value').textContent = `${torque > 0 ? '+' : ''}${torque.toFixed(2)}`;
   $('torque-slider').setAttribute('aria-valuenow', torque.toFixed(3));
-  $('thumb').style.top = `${(1 - torque) * 50}%`;
-  $('torque-fill').style.top = `${torque > 0 ? (1 - torque) * 50 : 50}%`;
-  $('torque-fill').style.height = `${Math.abs(torque) * 50}%`;
+  $('thumb').style.left = `${(1 + torque) * 50}%`;
+  $('torque-fill').style.left = `${torque > 0 ? 50 : (1 + torque) * 50}%`;
+  $('torque-fill').style.width = `${Math.abs(torque) * 50}%`;
   if (recording && log) {
     const last = recording.events.at(-1);
     if (last.tick === recording.ticks) last.value = torque;
@@ -92,7 +105,7 @@ function release() {
 }
 function pointerValue(event) {
   const rect = $('torque-slider').getBoundingClientRect();
-  setTorque(1 - 2 * (event.clientY - rect.top) / rect.height);
+  setTorque(2 * (event.clientX - rect.left) / rect.width - 1);
 }
 $('torque-slider').addEventListener('pointerdown', event => {
   if (playback || pointer !== null || (event.pointerType === 'mouse' && event.button !== 0)) return;
@@ -102,15 +115,19 @@ $('torque-slider').addEventListener('pointerdown', event => {
 $('torque-slider').addEventListener('pointermove', event => { if (event.pointerId === pointer) pointerValue(event); });
 for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) $('torque-slider').addEventListener(type, event => { if (event.pointerId === pointer) release(); });
 $('torque-slider').addEventListener('keydown', event => {
-  if (!['ArrowUp', 'ArrowDown', 'Home', 'Escape'].includes(event.key)) return;
+  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'Escape'].includes(event.key)) return;
   event.preventDefault(); if (playback) return;
   if (event.key === 'Escape' || event.key === 'Home') { release(); return; }
-  keys.add(event.key); setTorque(keys.has('ArrowUp') === keys.has('ArrowDown') ? 0 : keys.has('ArrowUp') ? 1 : -1);
+  keys.add(event.key); keyboardTorque();
 });
 $('torque-slider').addEventListener('keyup', event => {
   if (!keys.has(event.key)) return;
-  keys.delete(event.key); setTorque(keys.has('ArrowUp') === keys.has('ArrowDown') ? 0 : keys.has('ArrowUp') ? 1 : -1);
+  keys.delete(event.key); keyboardTorque();
 });
+function keyboardTorque() {
+  const positive = keys.has('ArrowRight') || keys.has('ArrowUp'), negative = keys.has('ArrowLeft') || keys.has('ArrowDown');
+  setTorque(positive === negative ? 0 : positive ? 1 : -1);
+}
 $('torque-slider').addEventListener('blur', () => { if (!playback) release(); });
 window.addEventListener('blur', () => { if (!playback) release(); });
 document.addEventListener('visibilitychange', () => { if (!playback) release(); previousTime = null; accumulator = 0; previousState = state; });
@@ -129,6 +146,11 @@ function updateButtons() {
 function angles(angle = state.angle) { return spec.gears.map(g => visualAngle(g, angle)); }
 function paint(angle = state.angle, time = Infinity) {
   sound.follow(angle, !!diagnostics?.active);
+  for (const [id, until] of flashes) if (performance.now() >= until) {
+    const line = markers[id].querySelector('line');
+    line.setAttribute('stroke', '#ff3434'); line.setAttribute('stroke-width', '5');
+    delete markers[id].dataset.flash; flashes.delete(id);
+  }
   const rotations = angles(angle);
   if (angle !== lastPaintedAngle) {
     spec.gears.forEach((g, i) => {
@@ -162,12 +184,13 @@ function drawMovie(rotations) {
     ctx.beginPath(); ctx.arc(g.x, g.y, 29, 0, Math.PI * 2); ctx.fillStyle = gradient; ctx.fill(); ctx.strokeStyle = g.id === 'b' ? '#d6b275' : '#9aabb5'; ctx.lineWidth = 3; ctx.stroke();
     const bearing = rotations[i] + g.markerAngle, markerRadius = spec.module * (g.z / 2 + 1);
     ctx.beginPath(); ctx.moveTo(g.x, g.y); ctx.lineTo(g.x + markerRadius * Math.cos(bearing), g.y + markerRadius * Math.sin(bearing));
-    ctx.strokeStyle = '#ff3434'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
+    ctx.strokeStyle = flashes.has(g.id) ? '#fff4bc' : '#ff3434'; ctx.lineWidth = flashes.has(g.id) ? 10 : 5; ctx.lineCap = 'round'; ctx.stroke();
     if (g.id === 'b' && physicsSettings.weight > 0) {
       const x = g.x + weightRadius * Math.cos(bearing), y = g.y + weightRadius * Math.sin(bearing), size = weightSize(physicsSettings.weight);
-      ctx.beginPath();
-      for (let k = 0; k < 6; k++) { const a = rotations[i] + k * Math.PI / 3; const px = x + size * Math.cos(a), py = y + size * Math.sin(a); if (k) ctx.lineTo(px, py); else ctx.moveTo(px, py); }
-      ctx.closePath(); ctx.fillStyle = '#d8a05b'; ctx.fill(); ctx.strokeStyle = '#ffe0a8'; ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(bearing + Math.PI / 2);
+      ctx.beginPath(); ctx.moveTo(-.45 * size, -.75 * size); ctx.lineTo(.45 * size, -.75 * size); ctx.lineTo(size, .8 * size); ctx.lineTo(-size, .8 * size);
+      ctx.closePath(); ctx.fillStyle = '#050505'; ctx.fill(); ctx.strokeStyle = '#a4adb3'; ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = `bold ${size * 1.15}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('w', 0, 0); ctx.restore();
     }
     ctx.textAlign = 'center'; ctx.fillStyle = '#f1f5f6'; ctx.font = 'bold 36px Arial'; ctx.fillText(g.id, g.x, g.y + 12);
   });

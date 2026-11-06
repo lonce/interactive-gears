@@ -3,7 +3,8 @@ import { halfPhaseCrossings } from './physics.mjs';
 const SOURCE = 'https://claudio.sonicthings.org/soundlib/';
 const NOTES = { a: 79, b: 72, c: 84 }; // G5, C5, C6, within the preset's MIDI 70–90 range.
 export class GearSound {
-  constructor(gears, button) {
+  constructor(gears, button, onCrossing = () => {}) {
+    this.onCrossing = onCrossing;
     this.gears = gears; this.button = button; this.enabled = true; this.previousAngle = null;
     this.system = null; this.voices = {}; this.indices = {}; this.ready = false; this.hits = { a: 0, b: 0, c: 0 };
     this.loading = this.load();
@@ -59,9 +60,11 @@ export class GearSound {
   reset(angle) { this.previousAngle = angle; this.silence(); }
   follow(angle, muted = false) {
     const previous = this.previousAngle; this.previousAngle = angle;
-    if (previous === null || muted || !this.ready || !this.enabled || this.system.context.state !== 'running' || document.hidden) return;
+    if (previous === null || muted || document.hidden) return;
     for (const gear of this.gears) {
       const count = halfPhaseCrossings(previous, angle, gear);
+      if (count) this.onCrossing(gear.id);
+      if (!this.ready || !this.enabled || this.system.context.state !== 'running') continue;
       for (let hit = 0; hit < Math.min(count, 8); hit++) {
         const pool = this.voices[gear.id], index = this.indices[gear.id];
         const voice = pool[index]; this.indices[gear.id] = (index + 1) % pool.length;

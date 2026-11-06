@@ -48,7 +48,7 @@ Replace `your-domain.example` with the domain already configured on your server:
 - SVG: `https://your-domain.example/gears/?renderer=svg`
 - Comparison: `https://your-domain.example/gears/?diagnostics=1`
 
-Keep the trailing slash after `/gears/` so relative asset URLs resolve correctly. Drag the vertical slider with your finger and release to coast. Keep the tab visible for recording or diagnostics. The diagnostics comparison takes 72 seconds and temporarily disables the normal controls. Browser movie export depends on the phone's MediaRecorder support; if unavailable, Save take still preserves the recording as JSON.
+Keep the trailing slash after `/gears/` so relative asset URLs resolve correctly. Drag the horizontal slider with your finger and release to coast. Keep the tab visible for recording or diagnostics. The diagnostics comparison takes 72 seconds and temporarily disables the normal controls. Browser movie export depends on the phone's MediaRecorder support; if unavailable, Save take still preserves the recording as JSON.
 
 For meaningful stutter comparisons, test both rendering modes on the same phone, at the same orientation and zoom, without resizing or switching apps during the run. The diagnostic page offers a JSON report download.
 
