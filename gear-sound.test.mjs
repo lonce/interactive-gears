@@ -46,16 +46,21 @@ test('audible crossings flash once and use the next reusable voice', () => {
   }
 });
 
-test('first touch unlocks during module loading and the loaded voices keep that context', async () => {
+for (const gesture of ['touchstart', 'touchend']) test(`first ${gesture} unlocks during module loading and the loaded voices keep that context`, async () => {
   const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   const listeners = {}, contexts = [], voices = [];
   let finishModules;
   const modules = new Promise(resolve => { finishModules = resolve; });
   class Context {
-    constructor() { this.state = 'suspended'; this.destination = {}; this.resumeCalls = 0; contexts.push(this); }
+    constructor() { this.state = 'suspended'; this.destination = {}; this.resumeCalls = 0; this.primeCalls = 0; this.sampleRate = 48000; contexts.push(this); }
     addEventListener() {}
     createGain() { return { gain: {}, connect() {}, disconnect() {} }; }
+    createBuffer() { return {}; }
+    createBufferSource() {
+      const context = this;
+      return { connect() {}, disconnect() {}, start() { context.primeCalls++; this.onended(); } };
+    }
     async resume() { this.resumeCalls++; this.state = 'running'; }
     async close() { this.state = 'closed'; }
   }
@@ -75,9 +80,10 @@ test('first touch unlocks during module loading and the loaded voices keep that 
     const sound = new LoadingSound([gear], button);
     assert(sound.context, 'context exists synchronously, before module download finishes');
     assert.equal(sound.ready,false);
-    listeners.touchend({isTrusted:true,target:{}}); // The first and only physical touch.
+    listeners[gesture]({isTrusted:true,target:{}}); // No release event in the touchstart case.
     await Promise.resolve();
     assert.equal(sound.context.state,'running');
+    assert.equal(sound.context.primeCalls,1,'primes output even when resume immediately reports running');
     finishModules([{AudioSystem},{WG4PresetPlink:class {}}]);
     assert.equal(await sound.loading,true);
     assert.equal(sound.system.context,contexts[0]);

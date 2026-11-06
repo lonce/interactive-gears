@@ -14,8 +14,10 @@ export class GearSound {
       else { this.enabled = false; this.silence(); this.update(); }
     });
     const unlock = event => { if (event.isTrusted && event.target !== button && this.enabled) this.unlock(); };
-    // Touch browsers can grant activation on release rather than pointerdown.
-    for (const type of ['pointerdown', 'pointerup', 'touchend', 'keydown', 'click']) document.addEventListener(type, unlock, { capture: true });
+    // Native touchstart matters: a touch pointerdown alone may not unlock
+    // mobile audio. Handle it before the slider's gesture cancellation, and
+    // keep release/click as fallbacks rather than requiring a finger lift.
+    for (const type of ['pointerdown', 'touchstart', 'pointerup', 'touchend', 'keydown', 'click']) document.addEventListener(type, unlock, { capture: true, passive: true });
     document.addEventListener('visibilitychange', () => { if (document.hidden) { this.silence(); this.context?.suspend().catch(() => {}); this.previousAngle = null; } });
     window.addEventListener('pagehide', () => this.silence());
   }
@@ -76,11 +78,14 @@ export class GearSound {
   unlock() {
     if (!this.context || !this.enabled) return;
     const resumed = this.resume(); // Invoke resume inside the gesture, before awaiting anything.
-    if (this.context.state !== 'running') {
-      // A silent one-sample source primes mobile audio without playing a note.
+    if (!this.primed || this.context.state !== 'running') {
+      // Prime on the first press even if resume() already reports running:
+      // that state alone does not prove mobile output has been unlocked.
       const source = this.context.createBufferSource();
       source.buffer = this.context.createBuffer(1, 1, this.context.sampleRate);
-      source.connect(this.context.destination); source.onended = () => source.disconnect(); source.start();
+      source.connect(this.context.destination);
+      source.onended = () => { this.primed = true; source.disconnect(); };
+      source.start();
     }
     return resumed;
   }
