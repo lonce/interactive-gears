@@ -1,6 +1,7 @@
 export const SETTINGS = Object.freeze({ step: 1 / 120, inertia: 2, maxTorque: 3, viscous: 0, friction: 0.4, weight: 4 });
 export const PARAMETERS = Object.freeze({ friction: { min: 0, max: .9, step: .01 }, viscous: { min: 0, max: 3.4, step: .02 }, inertia: { min: 1, max: 19, step: .1 }, weight: { min: 0, max: 4, step: .05 } });
 export const WEIGHT_RADIUS = .78;
+export const INITIAL_ANGLE = Math.PI; // B's marked spoke and weight point down.
 export function gravityTorque(angle, weight = 0) {
   const sine = Math.sin(angle);
   return weight * 3 * WEIGHT_RADIUS * (Math.abs(sine) < 1e-12 ? 0 : sine);

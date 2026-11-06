@@ -1,4 +1,4 @@
-import { SETTINGS, PARAMETERS, WEIGHT_RADIUS, weightSize, advance, clamp, validateTake, visualAngle, interpolateAngle, clockwisePhase } from './physics.mjs';
+import { SETTINGS, PARAMETERS, WEIGHT_RADIUS, INITIAL_ANGLE, weightSize, advance, clamp, validateTake, visualAngle, interpolateAngle, clockwisePhase } from './physics.mjs';
 import { setupDiagnostics } from './diagnostics.mjs';
 import { GearSound } from './gear-sound.mjs';
 const $ = id => document.getElementById(id);
@@ -15,8 +15,8 @@ const driverGear = spec.gears.find(gear => gear.id === 'b');
 const weightRadius = spec.module * (driverGear.z / 2 + 1) * WEIGHT_RADIUS;
 const weightIcon = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 weightIcon.id = 'weight-icon';
-weightIcon.innerHTML = '<path fill="#050505" stroke="#a4adb3" stroke-width="2.5" d="M -0.45 -0.75 L 0.45 -0.75 L 1 0.8 L -1 0.8 Z"/><text text-anchor="middle" dominant-baseline="central" fill="white" font-family="Arial,sans-serif" font-weight="700" font-size="1.15">w</text>';
-// Scale the silhouette and lettering together, keeping its top toward the rim.
+weightIcon.innerHTML = '<path fill="#050505" stroke="#ff3434" stroke-width="2.5" d="M -0.45 -0.75 L 0.45 -0.75 L 1 0.8 L -1 0.8 Z"/><text text-anchor="middle" dominant-baseline="central" fill="white" font-family="Arial,sans-serif" font-weight="700" font-size="1.35">w</text>';
+// Scale the silhouette and lettering together, upright in the initial bottom pose.
 weightIcon.firstElementChild.setAttribute('vector-effect', 'non-scaling-stroke');
 markers.b.append(weightIcon);
 const phaseValues = Object.fromEntries(spec.gears.map(g => [g.id, $(`phase-${g.id}`)]));
@@ -25,9 +25,10 @@ const sound = new GearSound(spec.gears, $('sound-toggle'), id => {
   flashes.set(id, performance.now() + 170);
   markers[id].querySelector('line').setAttribute('stroke', '#fff4bc');
   markers[id].querySelector('line').setAttribute('stroke-width', '10');
+  if (id === 'b') weightIcon.firstElementChild.setAttribute('stroke', '#fff4bc');
   markers[id].dataset.flash = 'true';
 });
-let state = { angle: 0, velocity: 0 }, torque = 0, pointer = null, keys = new Set();
+let state = { angle: INITIAL_ANGLE, velocity: 0 }, torque = 0, pointer = null, keys = new Set();
 let previousState = state;
 let take = null, recording = null, playback = null, accumulator = 0, previousTime = null;
 let physicsSettings = { ...SETTINGS };
@@ -65,7 +66,7 @@ function setParameters(values, log = true) {
     $(`value-${key}`).textContent = physicsSettings[key].toFixed(key === 'inertia' ? 1 : 2);
   }
   const size = weightSize(physicsSettings.weight), x = weightRadius * Math.cos(driverGear.markerAngle), y = weightRadius * Math.sin(driverGear.markerAngle);
-  weightIcon.setAttribute('transform', `translate(${x} ${y}) rotate(${driverGear.markerAngle * 180 / Math.PI + 90}) scale(${size})`);
+  weightIcon.setAttribute('transform', `translate(${x} ${y}) rotate(${driverGear.markerAngle * 180 / Math.PI + 270}) scale(${size})`);
   weightIcon.setAttribute('visibility', size > 0 ? 'visible' : 'hidden');
   weightIcon.setAttribute('data-weight', physicsSettings.weight);
   if (recording && log) {
@@ -149,6 +150,7 @@ function paint(angle = state.angle, time = Infinity) {
   for (const [id, until] of flashes) if (performance.now() >= until) {
     const line = markers[id].querySelector('line');
     line.setAttribute('stroke', '#ff3434'); line.setAttribute('stroke-width', '5');
+    if (id === 'b') weightIcon.firstElementChild.setAttribute('stroke', '#ff3434');
     delete markers[id].dataset.flash; flashes.delete(id);
   }
   const rotations = angles(angle);
@@ -187,10 +189,10 @@ function drawMovie(rotations) {
     ctx.strokeStyle = flashes.has(g.id) ? '#fff4bc' : '#ff3434'; ctx.lineWidth = flashes.has(g.id) ? 10 : 5; ctx.lineCap = 'round'; ctx.stroke();
     if (g.id === 'b' && physicsSettings.weight > 0) {
       const x = g.x + weightRadius * Math.cos(bearing), y = g.y + weightRadius * Math.sin(bearing), size = weightSize(physicsSettings.weight);
-      ctx.save(); ctx.translate(x, y); ctx.rotate(bearing + Math.PI / 2);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(bearing + 3 * Math.PI / 2);
       ctx.beginPath(); ctx.moveTo(-.45 * size, -.75 * size); ctx.lineTo(.45 * size, -.75 * size); ctx.lineTo(size, .8 * size); ctx.lineTo(-size, .8 * size);
-      ctx.closePath(); ctx.fillStyle = '#050505'; ctx.fill(); ctx.strokeStyle = '#a4adb3'; ctx.lineWidth = 2.5; ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.font = `bold ${size * 1.15}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('w', 0, 0); ctx.restore();
+      ctx.closePath(); ctx.fillStyle = '#050505'; ctx.fill(); ctx.strokeStyle = flashes.has('b') ? '#fff4bc' : '#ff3434'; ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = `bold ${size * 1.35}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('w', 0, 0); ctx.restore();
     }
     ctx.textAlign = 'center'; ctx.fillStyle = '#f1f5f6'; ctx.font = 'bold 36px Arial'; ctx.fillText(g.id, g.x, g.y + 12);
   });
@@ -269,7 +271,7 @@ function finishReplay() {
 }
 $('replay').addEventListener('click', () => { startReplay(); status('Replaying the recorded torque inputs.'); });
 $('save').addEventListener('click', () => download(new Blob([JSON.stringify(take, null, 2)], { type: 'application/json' }), 'gear-take.json'));
-$('reset').addEventListener('click', () => { release(); state = { angle: 0, velocity: 0 }; sound.reset(0); previousState = state; accumulator = 0; paint(); status('Mechanism reset. Saved take is retained.'); });
+$('reset').addEventListener('click', () => { release(); state = { angle: INITIAL_ANGLE, velocity: 0 }; sound.reset(INITIAL_ANGLE); previousState = state; accumulator = 0; paint(); status('Mechanism reset. Saved take is retained.'); });
 $('load').addEventListener('change', async event => {
   try {
     const file = event.target.files[0]; if (!file) return;

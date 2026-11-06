@@ -122,3 +122,16 @@ test('half-phase sound crossings handle either direction, wraparound, boundaries
   assert.equal(crossings(.6,.5),1); assert.equal(crossings(.5,.4),0);
   assert.equal(crossings(.4,2.6),3); assert.equal(crossings(-.6,-.4),1);
 });
+
+test('bottom startup pose rests stably and positive input swings the weight right', async () => {
+  const { INITIAL_ANGLE } = await import('./physics.mjs');
+  const gear = { id:'b', z:36, phase:-Math.PI/2-Math.PI/3, markerAngle:Math.PI/3 };
+  const initial = { angle:INITIAL_ANGLE, velocity:0 };
+  assert.equal(clockwisePhase(visualAngle(gear, INITIAL_ANGLE), gear.markerAngle), .5);
+  assert.deepEqual(run(initial,0,2,SETTINGS), initial);
+  const moved = run(initial,1,.2,SETTINGS);
+  const bearing = visualAngle(gear,moved.angle)+gear.markerAngle;
+  assert(Math.cos(bearing)>0, 'positive torque moves the weight right from bottom');
+  assert(gravityTorque(INITIAL_ANGLE+.1,4)<0);
+  assert(gravityTorque(INITIAL_ANGLE-.1,4)>0);
+});
