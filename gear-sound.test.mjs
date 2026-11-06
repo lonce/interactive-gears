@@ -35,7 +35,7 @@ test('audible crossings flash once and use the next reusable voice', () => {
       gears: [{ id: 'b', phase: -Math.PI / 2, markerAngle: 0, z: 36 }],
       previousAngle: -.4 * 2 * Math.PI, ready: true, enabled: true,
       system: { context: { state: 'running' } }, voices: { b: [voice('one'), voice('two')] },
-      indices: { b: 0 }, hits: { b: 0 }, button: { dataset: {} }, onCrossing: () => events.push('flash'),
+      indices: { b: 0 }, hits: { b: 0 }, stateElement: { dataset: {} }, onCrossing: () => events.push('flash'),
     });
     sound.follow(-.6 * 2 * Math.PI); sound.follow(-.4 * 2 * Math.PI);
     assert.deepEqual(events, ['flash', 'one:play', 'one:pluck', 'flash', 'two:play', 'two:pluck']);
@@ -46,7 +46,7 @@ test('audible crossings flash once and use the next reusable voice', () => {
   }
 });
 
-for (const gesture of ['touchstart', 'touchend']) test(`first ${gesture} unlocks during module loading and the loaded voices keep that context`, async () => {
+test('only explicit lever activation unlocks audio, preserving the context during loading', async () => {
   const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   const listeners = {}, contexts = [], voices = [];
@@ -80,11 +80,10 @@ for (const gesture of ['touchstart', 'touchend']) test(`first ${gesture} unlocks
     const sound = new LoadingSound([gear], button);
     assert(sound.context, 'context exists synchronously, before module download finishes');
     assert.equal(sound.ready,false);
-    sound.automaticUnlock = false;
-    listeners[gesture]({isTrusted:true,target:{}});
-    assert.equal(sound.context.resumeCalls,0,'background gestures cannot bypass the startup lever');
-    sound.automaticUnlock = true;
-    listeners[gesture]({isTrusted:true,target:{}}); // No release event in the touchstart case.
+    assert.deepEqual(Object.keys(listeners), ['visibilitychange'], 'no legacy touch, pointer, key or click audio-unlock listeners');
+    listeners.visibilitychange();
+    assert.equal(sound.context.resumeCalls,0,'returning to an unstarted page does not unlock audio');
+    await sound.unlock(); // Called only by the completed lever click in the app.
     await Promise.resolve();
     assert.equal(sound.context.state,'running');
     assert.equal(sound.context.primeCalls,1,'primes output even when resume immediately reports running');
@@ -98,7 +97,7 @@ for (const gesture of ['touchstart', 'touchend']) test(`first ${gesture} unlocks
     assert.equal(voices[0].played,true);
     sound.enabled = false;
     const count = sound.context.resumeCalls;
-    listeners.pointerup({isTrusted:true,target:{}});
+    sound.started = true; listeners.visibilitychange();
     assert.equal(sound.context.resumeCalls,count,'a release does not undo an explicit mute');
   } finally {
     if (originalDocument) Object.defineProperty(globalThis,'document',originalDocument); else delete globalThis.document;

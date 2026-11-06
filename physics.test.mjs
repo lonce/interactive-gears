@@ -65,7 +65,8 @@ test('initial markers are nearest vertical while both meshes remain locked', () 
   }
 });
 test('startup parameters match the requested defaults within supported ranges', () => {
-  assert.deepEqual([SETTINGS.friction,SETTINGS.viscous,SETTINGS.inertia,SETTINGS.weight],[.4,0,2,4]);
+  assert.deepEqual([SETTINGS.friction,SETTINGS.viscous,SETTINGS.inertia,SETTINGS.weight],[.5,0,1,4]);
+  assert.deepEqual([PARAMETERS.inertia.min,PARAMETERS.inertia.max],[0,2]);
   for(const [key,range] of Object.entries(PARAMETERS)) assert(SETTINGS[key]>=range.min && SETTINGS[key]<=range.max);
 });
 test('inertia changes acceleration; friction and drag independently slow coasting', () => {
@@ -83,7 +84,7 @@ test('take validation accepts old settings and timed parameter changes, rejectin
   assert.equal(validateTake(modern),modern);
   let state = run(legacy.initial,1,1,modern.settings), speed = state.velocity;
   state = run(state,0,1,modern.settingsEvents[0].settings); assert.equal(state.velocity,speed);
-  assert.throws(()=>validateTake({...modern,settingsEvents:[{tick:120,settings:{...SETTINGS,inertia:0}}]}));
+  assert.throws(()=>validateTake({...modern,settingsEvents:[{tick:120,settings:{...SETTINGS,inertia:-1}}]}));
   assert.throws(()=>validateTake({...modern,settingsEvents:[{tick:241,settings:SETTINGS}]}));
 });
 test('gravity pulls either side down and vanishes at top, bottom, or zero mass', () => {
@@ -134,4 +135,17 @@ test('bottom startup pose rests stably and positive input swings the weight righ
   assert(Math.cos(bearing)>0, 'positive torque moves the weight right from bottom');
   assert(gravityTorque(INITIAL_ANGLE+.1,4)<0);
   assert(gravityTorque(INITIAL_ANGLE-.1,4)>0);
+});
+
+test('zero base inertia remains finite with and without an attached weight', () => {
+  for (const weight of [0,4]) for (const viscous of [0,3.4]) {
+    const settings={...SETTINGS,inertia:0,weight,viscous};
+    let state={angle:Math.PI,velocity:0};
+    for(let tick=0;tick<1200;tick++) {
+      state=advance(state,tick<120?1:0,SETTINGS.step,settings);
+      assert(Number.isFinite(state.angle) && Number.isFinite(state.velocity));
+    }
+    const take={format:'gears-take',version:1,step:SETTINGS.step,settings,initial:state,ticks:1,events:[]};
+    assert.equal(validateTake(take),take);
+  }
 });

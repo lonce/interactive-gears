@@ -17,6 +17,7 @@ const driverGear = spec.gears.find(gear => gear.id === 'b');
 // enters the gap five degrees right of B's uppermost tooth in the start pose.
 const mechanismLock = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 mechanismLock.id = 'mechanism-lock';
+mechanismLock.setAttribute('display', 'none');
 mechanismLock.setAttribute('transform', `translate(${driverGear.x} ${driverGear.y})`);
 mechanismLock.innerHTML = `<defs><linearGradient id="lock-steel" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#536976"/><stop offset=".45" stop-color="#d6e0e4"/><stop offset=".65" stop-color="#8195a0"/><stop offset="1" stop-color="#364d5b"/></linearGradient></defs>
  <g aria-hidden="true"><path d="M 25 -283 L 12 -303 L 26 -326 L 132 -444 L 155 -423 L 48 -306 Z" fill="url(#lock-steel)" stroke="#c0cdd4" stroke-width="4" stroke-linejoin="round"/>
@@ -37,17 +38,16 @@ weightIcon.firstElementChild.setAttribute('vector-effect', 'non-scaling-stroke')
 markers.b.append(weightIcon);
 const phaseValues = Object.fromEntries(spec.gears.map(g => [g.id, $(`phase-${g.id}`)]));
 const flashes = new Map();
-const sound = new GearSound(spec.gears, $('sound-toggle'), id => {
+const sound = new GearSound(spec.gears, $('sound-state'), id => {
   flashes.set(id, performance.now() + 170);
   markers[id].querySelector('line').setAttribute('stroke', '#fff4bc');
   markers[id].querySelector('line').setAttribute('stroke-width', '10');
   if (id === 'b') weightIcon.firstElementChild.setAttribute('stroke', '#fff4bc');
   markers[id].dataset.flash = 'true';
 });
-sound.automaticUnlock = false;
 let mechanismLocked = true, starting = false;
 function releaseStartLock() {
-  mechanismLocked = false; sound.automaticUnlock = true;
+  mechanismLocked = false; sound.started = sound.enabled && sound.ready;
   for (const panel of document.querySelectorAll('[data-controls]')) panel.inert = false;
   $('start-lock').hidden = true;
   mechanismLock.setAttribute('display', 'none');
@@ -357,5 +357,7 @@ $('movie').addEventListener('click', async () => {
     startReplay(); drawMovie(angles()); movieRecorder.start(); status('Exporting the movie by replaying your take. Keep this tab visible until it finishes.');
   } catch (error) { movieStream?.getTracks().forEach(track => track.stop()); movieRecorder = null; status(error.message); }
 });
-updateButtons(); paint(); requestAnimationFrame(frame);
+updateButtons(); paint();
+if (mechanismLocked) { $('start-lock').hidden = false; mechanismLock.removeAttribute('display'); }
+requestAnimationFrame(frame);
 window.addEventListener('pagehide', () => { movieStream?.getTracks().forEach(track => track.stop()); });

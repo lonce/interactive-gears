@@ -1,5 +1,5 @@
-export const SETTINGS = Object.freeze({ step: 1 / 120, inertia: 2, maxTorque: 3, viscous: 0, friction: 0.4, weight: 4 });
-export const PARAMETERS = Object.freeze({ friction: { min: 0, max: .9, step: .01 }, viscous: { min: 0, max: 3.4, step: .02 }, inertia: { min: 1, max: 19, step: .1 }, weight: { min: 0, max: 4, step: .05 } });
+export const SETTINGS = Object.freeze({ step: 1 / 120, inertia: 1, maxTorque: 3, viscous: 0, friction: 0.5, weight: 4 });
+export const PARAMETERS = Object.freeze({ friction: { min: 0, max: .9, step: .01 }, viscous: { min: 0, max: 3.4, step: .02 }, inertia: { min: 0, max: 2, step: .1 }, weight: { min: 0, max: 4, step: .05 } });
 export const WEIGHT_RADIUS = .78;
 export const INITIAL_ANGLE = Math.PI; // B's marked spoke and weight point down.
 export function gravityTorque(angle, weight = 0) {
@@ -9,7 +9,7 @@ export function gravityTorque(angle, weight = 0) {
 export const weightSize = weight => weight > 0 ? 9 + 15 * Math.sqrt(weight) : 0;
 export function validateSettings(settings) {
   if (!settings || settings.step !== SETTINGS.step || settings.maxTorque !== SETTINGS.maxTorque ||
-      Object.entries(PARAMETERS).some(([key, range]) => { const value = key === 'weight' && settings[key] === undefined ? 0 : settings[key]; return !Number.isFinite(value) || value < range.min || value > range.max; })) throw new Error('The recording contains unsupported physics settings.');
+      Object.entries(PARAMETERS).some(([key, range]) => { const value = key === 'weight' && settings[key] === undefined ? 0 : settings[key]; return !Number.isFinite(value) || value < range.min || value > (key === 'inertia' ? 19 : range.max); })) throw new Error('The recording contains unsupported physics settings.');
   return settings;
 }
 export const clamp = value => Math.max(-1, Math.min(1, value));
@@ -44,7 +44,10 @@ export function advance(state, input, dt = SETTINGS.step, settings = SETTINGS) {
   const w = state.velocity;
   if (Math.abs(w) < 1e-10 && Math.abs(torque) <= settings.friction) return { angle: state.angle, velocity: 0 };
   const resistance = settings.viscous * w + settings.friction * Math.sign(w || torque);
-  const inertia = settings.inertia + weight * WEIGHT_RADIUS ** 2;
+  // A completely massless, undamped wheel has no finite acceleration.
+  // Keep that slider corner numerically defined; attached weight still adds
+  // its full physical inertia even when the base inertia slider is zero.
+  const inertia = Math.max(.05, settings.inertia + weight * WEIGHT_RADIUS ** 2);
   let velocity = w + (torque - resistance) / inertia * dt;
   // Friction cannot carry the shaft through rest into reverse motion.
   if (w && Math.sign(velocity) !== Math.sign(w)) velocity = 0;

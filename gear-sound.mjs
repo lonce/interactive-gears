@@ -3,23 +3,17 @@ import { halfPhaseCrossings } from './physics.mjs';
 const SOURCE = 'https://claudio.sonicthings.org/soundlib/';
 const NOTES = { a: 79, b: 72, c: 84 }; // G5, C5, C6, within the preset's MIDI 70–90 range.
 export class GearSound {
-  constructor(gears, button, onCrossing = () => {}) {
+  constructor(gears, stateElement, onCrossing = () => {}) {
     this.onCrossing = onCrossing;
-    this.gears = gears; this.button = button; this.enabled = true; this.previousAngle = null;
+    this.gears = gears; this.stateElement = stateElement; this.enabled = true; this.started = false; this.previousAngle = null;
     this.system = null; this.voices = {}; this.indices = {}; this.ready = false; this.hits = { a: 0, b: 0, c: 0 };
     this.loading = this.load();
-    button.addEventListener('click', () => {
-      if (!this.ready) { this.unlock(); return; }
-      if (!this.enabled || this.context.state !== 'running') { this.enabled = true; this.unlock(); }
-      else { this.enabled = false; this.silence(); this.update(); }
+    // Only the lever starts audio. Lifecycle handling preserves that choice
+    // when returning to an already-started page; it never unlocks a fresh one.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { this.silence(); this.context?.suspend().catch(() => {}); this.previousAngle = null; }
+      else if (this.started && this.enabled) this.resume();
     });
-    this.automaticUnlock = true;
-    const unlock = event => { if (this.automaticUnlock && event.isTrusted && event.target !== button && this.enabled) this.unlock(); };
-    // Native touchstart matters: a touch pointerdown alone may not unlock
-    // mobile audio. Handle it before the slider's gesture cancellation, and
-    // keep release/click as fallbacks rather than requiring a finger lift.
-    for (const type of ['pointerdown', 'touchstart', 'pointerup', 'touchend', 'keydown', 'click']) document.addEventListener(type, unlock, { capture: true, passive: true });
-    document.addEventListener('visibilitychange', () => { if (document.hidden) { this.silence(); this.context?.suspend().catch(() => {}); this.previousAngle = null; } });
     window.addEventListener('pagehide', () => this.silence());
   }
   async load() {
@@ -49,12 +43,12 @@ export class GearSound {
           this.voices[gear.id].push(voice);
         }
       }
-      this.ready = true; this.button.disabled = false; this.update();
+      this.ready = true; this.update();
       return true;
     } catch (error) {
       console.error('WG4PresetPlink could not load:', error);
-      this.button.textContent = 'Sound unavailable'; this.button.title = `Claudio sound could not load: ${error.message}. The gears still work.`;
-      this.button.disabled = true; this.enabled = false; return false;
+      this.stateElement.textContent = 'Sound unavailable'; this.stateElement.title = `Claudio sound could not load: ${error.message}. The gears still work.`;
+      this.enabled = false; return false;
     }
   }
   loadModules() {
@@ -63,10 +57,8 @@ export class GearSound {
   update() {
     if (!this.ready) return;
     const on = this.enabled && this.system.context.state === 'running';
-    this.button.textContent = on ? 'Sound on · Plink' : this.enabled ? 'Enable sound' : 'Sound off';
-    this.button.setAttribute('aria-pressed', String(on));
-    this.button.dataset.audioState = this.system.context.state;
-    this.button.title = 'WG4PresetPlink — A: G5, B: C5, C: C6. Sounds at phase 0.5 in either direction.';
+    this.stateElement.textContent = on ? 'Sound on · Plink' : 'Sound off';
+    this.stateElement.dataset.audioState = this.context.state;
   }
   async resume() {
     if (!this.context || !this.enabled) return false;
@@ -74,7 +66,7 @@ export class GearSound {
       if (this.context.state !== 'running') await this.context.resume();
       this.update(); return this.context.state === 'running';
     }
-    catch (error) { this.button.title = `Tap to enable audio: ${error.message}`; return false; }
+    catch (error) { this.stateElement.title = `Audio could not resume: ${error.message}`; return false; }
   }
   unlock() {
     if (!this.context || !this.enabled) return;
@@ -103,7 +95,7 @@ export class GearSound {
         const pool = this.voices[gear.id], index = this.indices[gear.id];
         const voice = pool[index]; this.indices[gear.id] = (index + 1) % pool.length;
         voice.play(); voice.event('pluck');
-        this.hits[gear.id]++; this.button.dataset[`hits${gear.id.toUpperCase()}`] = this.hits[gear.id];
+        this.hits[gear.id]++; this.stateElement.dataset[`hits${gear.id.toUpperCase()}`] = this.hits[gear.id];
       }
     }
   }
