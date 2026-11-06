@@ -3,6 +3,11 @@ import { halfPhaseCrossings } from './physics.mjs';
 const SOURCE = 'https://claudio.sonicthings.org/soundlib/';
 const NOTES = { a: 79, b: 72, c: 84 }; // G5, C5, C6, within the preset's MIDI 70–90 range.
 export const clickRateForVelocity = velocity => Number.isFinite(velocity) ? Math.min(20, Math.abs(velocity) * 36 / (2 * Math.PI)) : 0;
+export function clickerHighPassCoefficients(sampleRate) {
+  // Bilinear-transform first-order high-pass: -3 dB at 800 Hz, 6 dB/octave.
+  const k = Math.tan(Math.PI * 800 / sampleRate), b = 1 / (1 + k);
+  return { feedforward: [b, -b], feedback: [1, (k - 1) * b] };
+}
 export class GearSound {
   constructor(gears, stateElement, onCrossing = () => {}) {
     this.onCrossing = onCrossing;
@@ -47,6 +52,13 @@ export class GearSound {
       // Exactly one continuous click train; the audio worklet clocks its pulses.
       this.clicker = await this.system.createSound(ClickerWorkletSoundModel, 'gear-b-clicker', 0);
       this.clicker.setParameterNormalized('gain', .45);
+      const { feedforward, feedback } = clickerHighPassCoefficients(this.context.sampleRate);
+      this.clickerHighPass = this.context.createIIRFilter(feedforward, feedback);
+      // Re-route only the clicker's output; leave all plink voices untouched.
+      // Its createSound warm-up has already finished before this reconnection.
+      this.clicker.outputNode.disconnect();
+      this.clicker.outputNode.connect(this.clickerHighPass);
+      this.clickerHighPass.connect(this.system.masterGainNode);
       this.clickerActive = false; this.lastClickRate = 0; this.lastClickUpdate = -Infinity;
       this.stateElement.dataset.clickRate = '0.00';
       this.ready = true; this.update();

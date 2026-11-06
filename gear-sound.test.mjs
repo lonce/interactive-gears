@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GearSound, clickRateForVelocity } from './gear-sound.mjs';
+import { GearSound, clickRateForVelocity, clickerHighPassCoefficients } from './gear-sound.mjs';
 
 test('phase flashes work before audio loads and while muted; reset does not create crossings', () => {
   const original = Object.getOwnPropertyDescriptor(globalThis, 'document');
@@ -56,6 +56,7 @@ test('only explicit lever activation unlocks audio, preserving the context durin
     constructor() { this.state = 'suspended'; this.destination = {}; this.currentTime = 0; this.resumeCalls = 0; this.primeCalls = 0; this.sampleRate = 48000; contexts.push(this); }
     addEventListener() {}
     createGain() { return { gain: {}, connect() {}, disconnect() {} }; }
+    createIIRFilter(feedforward,feedback) { this.filter = {feedforward,feedback,connect(destination){this.destination=destination;}}; return this.filter; }
     createBuffer() { return {}; }
     createBufferSource() {
       const context = this;
@@ -68,6 +69,7 @@ test('only explicit lever activation unlocks audio, preserving the context durin
     constructor() { this.context = new Context(); this.masterGainNode = this.context.createGain(); }
     async createSound(SoundClass, name) {
       const voice = { name, context: this.context, getParameter: () => ({min:70,max:90}), setParameterNormalized() {}, play() { this.played = true; }, event() {}, kill() {}, workletNode: { parameters: new Map(['active','clickRate'].map(key => [key,{setValueAtTime(){},setTargetAtTime(){}}])) } };
+      voice.outputNode = { connect(destination){this.destination=destination;},disconnect(){this.disconnected=true;} };
       voices.push(voice); return voice;
     }
   }
@@ -93,6 +95,9 @@ test('only explicit lever activation unlocks audio, preserving the context durin
     assert.equal(contexts[1].state,'closed');
     assert(voices.every(voice => voice.context === contexts[0]));
     assert.equal(voices.filter(voice => voice.name === 'gear-b-clicker').length,1,'one clicker instance for the whole mechanism');
+    assert.equal(sound.clicker.outputNode.destination,contexts[0].filter);
+    assert.equal(contexts[0].filter.destination,sound.system.masterGainNode);
+    assert(voices.filter(voice=>voice.name!=='gear-b-clicker').every(voice=>!voice.outputNode.disconnected),'plinks are not rerouted through the filter');
     sound.follow(-.4*2*Math.PI); sound.follow(-.6*2*Math.PI);
     assert.equal(sound.hits.b,1,'rings on a crossing without a second touch');
     assert.equal(voices[0].played,true);
@@ -141,5 +146,21 @@ test('one clicker runs continuously while moving and is silent at rest, while mu
     assert.equal(sound.clicker,clicker);
   } finally {
     if(original) Object.defineProperty(globalThis,'document',original); else delete globalThis.document;
+  }
+});
+
+test('clicker filter has one pole, rejects DC and is -3 dB at 800 Hz', () => {
+  for (const sampleRate of [44100,48000,96000]) {
+    const {feedforward:b,feedback:a}=clickerHighPassCoefficients(sampleRate);
+    assert.equal(a.length,2); assert.equal(b.length,2);
+    assert(Math.abs(a[1])<1,'pole is stable');
+    const magnitude = frequency => {
+      const w=2*Math.PI*frequency/sampleRate, c=Math.cos(w), s=Math.sin(w);
+      return Math.hypot(b[0]+b[1]*c,b[1]*s)/Math.hypot(a[0]+a[1]*c,a[1]*s);
+    };
+    assert.equal(magnitude(0),0);
+    assert(Math.abs(magnitude(800)-Math.SQRT1_2)<1e-12);
+    assert(Math.abs(magnitude(sampleRate/2)-1)<1e-12);
+    assert(magnitude(100)<magnitude(400) && magnitude(400)<magnitude(1600));
   }
 });
