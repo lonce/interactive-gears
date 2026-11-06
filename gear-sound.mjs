@@ -4,8 +4,8 @@ const SOURCE = 'https://claudio.sonicthings.org/soundlib/';
 const NOTES = { a: 79, b: 72, c: 84 }; // G5, C5, C6, within the preset's MIDI 70–90 range.
 export const clickRateForVelocity = velocity => Number.isFinite(velocity) ? Math.min(20, Math.abs(velocity) * 36 / (2 * Math.PI)) : 0;
 export function clickerHighPassCoefficients(sampleRate) {
-  // Bilinear-transform first-order high-pass: -3 dB at 800 Hz, 6 dB/octave.
-  const k = Math.tan(Math.PI * 800 / sampleRate), b = 1 / (1 + k);
+  // Bilinear-transform first-order high-pass: -3 dB at 1200 Hz, 6 dB/octave.
+  const k = Math.tan(Math.PI * 1200 / sampleRate), b = 1 / (1 + k);
   return { feedforward: [b, -b], feedback: [1, (k - 1) * b] };
 }
 export class GearSound {

@@ -149,7 +149,7 @@ test('one clicker runs continuously while moving and is silent at rest, while mu
   }
 });
 
-test('clicker filter has one pole, rejects DC and is -3 dB at 800 Hz', () => {
+test('clicker filter has one pole, rejects DC and is -3 dB at 1200 Hz', () => {
   for (const sampleRate of [44100,48000,96000]) {
     const {feedforward:b,feedback:a}=clickerHighPassCoefficients(sampleRate);
     assert.equal(a.length,2); assert.equal(b.length,2);
@@ -159,7 +159,7 @@ test('clicker filter has one pole, rejects DC and is -3 dB at 800 Hz', () => {
       return Math.hypot(b[0]+b[1]*c,b[1]*s)/Math.hypot(a[0]+a[1]*c,a[1]*s);
     };
     assert.equal(magnitude(0),0);
-    assert(Math.abs(magnitude(800)-Math.SQRT1_2)<1e-12);
+    assert(Math.abs(magnitude(1200)-Math.SQRT1_2)<1e-12);
     assert(Math.abs(magnitude(sampleRate/2)-1)<1e-12);
     assert(magnitude(100)<magnitude(400) && magnitude(400)<magnitude(1600));
   }
