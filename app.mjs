@@ -5,6 +5,7 @@ const $ = id => document.getElementById(id);
 const [art, spec] = await Promise.all([fetch('gears.svg').then(r => r.text()), fetch('gear-spec.json').then(r => r.json())]);
 $('artwork').innerHTML = art;
 const svg = $('artwork').querySelector('svg');
+svg.setAttribute('role', 'group'); // Keep the integrated lock button accessible.
 // Fit the live stage to the mechanism rather than the movie's 16:9 canvas.
 const bounds = spec.gears.map(g => ({ x: g.x, y: g.y, r: spec.module * (g.z / 2 + 1) + 24 }));
 const left = Math.min(...bounds.map(g => g.x - g.r)), top = Math.min(...bounds.map(g => g.y - g.r));
@@ -12,6 +13,21 @@ svg.setAttribute('viewBox', `${left} ${top} ${Math.max(...bounds.map(g => g.x + 
 const rotors = Object.fromEntries(spec.gears.map(g => [g.id, svg.querySelector(`#rotor-${g.id}`)]));
 const markers = Object.fromEntries(spec.gears.map(g => [g.id, svg.querySelector(`#marker-${g.id}`)]));
 const driverGear = spec.gears.find(gear => gear.id === 'b');
+// Put the lock in the same coordinate space as the gears: its tapered tip
+// enters the gap five degrees right of B's uppermost tooth in the start pose.
+const mechanismLock = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+mechanismLock.id = 'mechanism-lock';
+mechanismLock.setAttribute('transform', `translate(${driverGear.x} ${driverGear.y})`);
+mechanismLock.innerHTML = `<defs><linearGradient id="lock-steel" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#536976"/><stop offset=".45" stop-color="#d6e0e4"/><stop offset=".65" stop-color="#8195a0"/><stop offset="1" stop-color="#364d5b"/></linearGradient></defs>
+ <g aria-hidden="true"><path d="M 25 -283 L 12 -303 L 26 -326 L 132 -444 L 155 -423 L 48 -306 Z" fill="url(#lock-steel)" stroke="#c0cdd4" stroke-width="4" stroke-linejoin="round"/>
+ <path d="M 30 -305 L 139 -432" fill="none" stroke="#344c5b" stroke-width="3"/>
+ <rect x="117" y="-457" width="134" height="54" rx="10" fill="#263943" stroke="#879ba6" stroke-width="4"/>
+ <circle cx="134" cy="-431" r="6" fill="#aab9c2"/><circle cx="233" cy="-431" r="6" fill="#aab9c2"/></g>`;
+const lockHandle = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+lockHandle.setAttribute('x', '75'); lockHandle.setAttribute('y', '-493');
+lockHandle.setAttribute('width', '240'); lockHandle.setAttribute('height', '230');
+lockHandle.append($('start-lock'));
+mechanismLock.append(lockHandle); svg.append(mechanismLock);
 const weightRadius = spec.module * (driverGear.z / 2 + 1) * WEIGHT_RADIUS;
 const weightIcon = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 weightIcon.id = 'weight-icon';
@@ -27,6 +43,47 @@ const sound = new GearSound(spec.gears, $('sound-toggle'), id => {
   markers[id].querySelector('line').setAttribute('stroke-width', '10');
   if (id === 'b') weightIcon.firstElementChild.setAttribute('stroke', '#fff4bc');
   markers[id].dataset.flash = 'true';
+});
+sound.automaticUnlock = false;
+let mechanismLocked = true, starting = false;
+function releaseStartLock() {
+  mechanismLocked = false; sound.automaticUnlock = true;
+  for (const panel of document.querySelectorAll('[data-controls]')) panel.inert = false;
+  $('start-lock').hidden = true;
+  mechanismLock.setAttribute('display', 'none');
+  updateButtons();
+  $('torque-slider').focus({ preventScroll: true });
+}
+async function startWithSound() {
+  if (starting || !mechanismLocked) return;
+  starting = true; $('sound-start').disabled = true;
+  $('start-lock').classList.add('starting'); $('start-label').textContent = 'Starting sound…';
+  // A completed tap supplies browser activation. Resume synchronously here,
+  // before waiting for any remotely loaded voices.
+  const unlocked = sound.unlock();
+  try {
+    const running = await unlocked;
+    if (!await sound.loading) return;
+    if (!running || sound.context.state !== 'running') throw new Error('Tap the lever again to enable audio.');
+    releaseStartLock(); status('Sound is on. Push and hold the torque slider.');
+  } catch (error) {
+    $('start-label').textContent = 'Sound on'; $('start-hint').textContent = error.message;
+  } finally {
+    starting = false; $('sound-start').disabled = !sound.enabled;
+    $('start-lock').classList.remove('starting');
+  }
+}
+$('sound-start').addEventListener('click', startWithSound);
+$('start-silent').addEventListener('click', () => {
+  sound.enabled = false; sound.silence(); releaseStartLock();
+  status('Sound unavailable. The gears are ready.');
+});
+sound.loading.then(loaded => {
+  if (!loaded && mechanismLocked) {
+    $('start-label').textContent = 'Sound unavailable'; $('sound-start').disabled = true;
+    $('start-hint').textContent = 'Audio could not load. You can still release the gears.';
+    $('start-silent').hidden = false;
+  }
 });
 let state = { angle: INITIAL_ANGLE, velocity: 0 }, torque = 0, pointer = null, keys = new Set();
 let previousState = state;
@@ -109,7 +166,7 @@ function pointerValue(event) {
   setTorque(2 * (event.clientX - rect.left) / rect.width - 1);
 }
 $('torque-slider').addEventListener('pointerdown', event => {
-  if (playback || pointer !== null || (event.pointerType === 'mouse' && event.button !== 0)) return;
+  if (mechanismLocked || playback || pointer !== null || (event.pointerType === 'mouse' && event.button !== 0)) return;
   event.preventDefault(); pointer = event.pointerId; $('torque-slider').focus();
   $('torque-slider').setPointerCapture(pointer); $('torque-slider').classList.add('dragging'); pointerValue(event);
 });
@@ -117,7 +174,7 @@ $('torque-slider').addEventListener('pointermove', event => { if (event.pointerI
 for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) $('torque-slider').addEventListener(type, event => { if (event.pointerId === pointer) release(); });
 $('torque-slider').addEventListener('keydown', event => {
   if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'Escape'].includes(event.key)) return;
-  event.preventDefault(); if (playback) return;
+  event.preventDefault(); if (mechanismLocked || playback) return;
   if (event.key === 'Escape' || event.key === 'Home') { release(); return; }
   keys.add(event.key); keyboardTorque();
 });
@@ -133,7 +190,7 @@ $('torque-slider').addEventListener('blur', () => { if (!playback) release(); })
 window.addEventListener('blur', () => { if (!playback) release(); });
 document.addEventListener('visibilitychange', () => { if (!playback) release(); previousTime = null; accumulator = 0; previousState = state; });
 function updateButtons() {
-  const busy = !!playback;
+  const busy = mechanismLocked || !!playback;
   $('record').disabled = busy;
   $('record').classList.toggle('recording', !!recording);
   $('record').innerHTML = `<span class="record-dot"></span>${recording ? 'Stop recording' : 'Record take'}`;

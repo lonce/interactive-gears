@@ -80,6 +80,10 @@ for (const gesture of ['touchstart', 'touchend']) test(`first ${gesture} unlocks
     const sound = new LoadingSound([gear], button);
     assert(sound.context, 'context exists synchronously, before module download finishes');
     assert.equal(sound.ready,false);
+    sound.automaticUnlock = false;
+    listeners[gesture]({isTrusted:true,target:{}});
+    assert.equal(sound.context.resumeCalls,0,'background gestures cannot bypass the startup lever');
+    sound.automaticUnlock = true;
     listeners[gesture]({isTrusted:true,target:{}}); // No release event in the touchstart case.
     await Promise.resolve();
     assert.equal(sound.context.state,'running');

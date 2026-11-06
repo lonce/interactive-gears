@@ -13,7 +13,8 @@ export class GearSound {
       if (!this.enabled || this.context.state !== 'running') { this.enabled = true; this.unlock(); }
       else { this.enabled = false; this.silence(); this.update(); }
     });
-    const unlock = event => { if (event.isTrusted && event.target !== button && this.enabled) this.unlock(); };
+    this.automaticUnlock = true;
+    const unlock = event => { if (this.automaticUnlock && event.isTrusted && event.target !== button && this.enabled) this.unlock(); };
     // Native touchstart matters: a touch pointerdown alone may not unlock
     // mobile audio. Handle it before the slider's gesture cancellation, and
     // keep release/click as fallbacks rather than requiring a finger lift.
