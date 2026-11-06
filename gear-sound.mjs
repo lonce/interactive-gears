@@ -9,22 +9,34 @@ export class GearSound {
     this.system = null; this.voices = {}; this.indices = {}; this.ready = false; this.hits = { a: 0, b: 0, c: 0 };
     this.loading = this.load();
     button.addEventListener('click', () => {
-      if (!this.ready) { this.loading.then(() => this.resume()); return; }
-      if (!this.enabled || this.system.context.state !== 'running') { this.enabled = true; this.resume(); }
+      if (!this.ready) { this.unlock(); return; }
+      if (!this.enabled || this.context.state !== 'running') { this.enabled = true; this.unlock(); }
       else { this.enabled = false; this.silence(); this.update(); }
     });
-    const unlock = event => { if (event.isTrusted && event.target !== button && this.enabled) this.resume(); };
-    document.addEventListener('pointerdown', unlock, { capture: true });
-    document.addEventListener('keydown', unlock, { capture: true });
-    document.addEventListener('visibilitychange', () => { if (document.hidden) { this.silence(); this.system?.context.suspend().catch(() => {}); this.previousAngle = null; } });
+    const unlock = event => { if (event.isTrusted && event.target !== button && this.enabled) this.unlock(); };
+    // Touch browsers can grant activation on release rather than pointerdown.
+    for (const type of ['pointerdown', 'pointerup', 'touchend', 'keydown', 'click']) document.addEventListener(type, unlock, { capture: true });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { this.silence(); this.context?.suspend().catch(() => {}); this.previousAngle = null; } });
     window.addEventListener('pagehide', () => this.silence());
   }
   async load() {
     try {
-      const [{ AudioSystem }, { WG4PresetPlink }] = await Promise.all([
-        import(`${SOURCE}AudioSystem.js`), import(`${SOURCE}models/WG4PresetPlink.js`)
-      ]);
-      this.system = new AudioSystem(); this.system.masterGainNode.gain.value = .25;
+      // Create before the first await: the first gesture must have a context
+      // to unlock even while the remote modules/worklets are still loading.
+      this.context = new (window.AudioContext || window.webkitAudioContext)();
+      this.context.addEventListener('statechange', () => this.update());
+      const [{ AudioSystem }, { WG4PresetPlink }] = await this.loadModules();
+      this.system = new AudioSystem();
+      // Claudio's constructor creates its own context and master gain, with
+      // no context-injection option. Adopt the already-unlocked context before
+      // creating any voices; dispose of the unused graph immediately.
+      const unusedContext = this.system.context;
+      this.system.masterGainNode.disconnect();
+      this.system.context = this.context;
+      this.system.masterGainNode = this.context.createGain();
+      this.system.masterGainNode.gain.value = .25;
+      this.system.masterGainNode.connect(this.context.destination);
+      unusedContext.close().catch(() => {});
       for (const gear of this.gears) {
         this.voices[gear.id] = []; this.indices[gear.id] = 0;
         for (let i = 0; i < 3; i++) {
@@ -35,13 +47,15 @@ export class GearSound {
         }
       }
       this.ready = true; this.button.disabled = false; this.update();
-      this.system.context.addEventListener('statechange', () => this.update());
       return true;
     } catch (error) {
       console.error('WG4PresetPlink could not load:', error);
       this.button.textContent = 'Sound unavailable'; this.button.title = `Claudio sound could not load: ${error.message}. The gears still work.`;
       this.button.disabled = true; this.enabled = false; return false;
     }
+  }
+  loadModules() {
+    return Promise.all([import(`${SOURCE}AudioSystem.js`), import(`${SOURCE}models/WG4PresetPlink.js`)]);
   }
   update() {
     if (!this.ready) return;
@@ -52,9 +66,23 @@ export class GearSound {
     this.button.title = 'WG4PresetPlink — A: G5, B: C5, C: C6. Sounds at phase 0.5 in either direction.';
   }
   async resume() {
-    if (!this.system || !this.enabled) return false;
-    try { await this.system.resume(); this.update(); return this.system.context.state === 'running'; }
+    if (!this.context || !this.enabled) return false;
+    try {
+      if (this.context.state !== 'running') await this.context.resume();
+      this.update(); return this.context.state === 'running';
+    }
     catch (error) { this.button.title = `Tap to enable audio: ${error.message}`; return false; }
+  }
+  unlock() {
+    if (!this.context || !this.enabled) return;
+    const resumed = this.resume(); // Invoke resume inside the gesture, before awaiting anything.
+    if (this.context.state !== 'running') {
+      // A silent one-sample source primes mobile audio without playing a note.
+      const source = this.context.createBufferSource();
+      source.buffer = this.context.createBuffer(1, 1, this.context.sampleRate);
+      source.connect(this.context.destination); source.onended = () => source.disconnect(); source.start();
+    }
+    return resumed;
   }
   silence() { for (const voices of Object.values(this.voices)) for (const voice of voices) { try { voice.kill(); } catch {} } }
   reset(angle) { this.previousAngle = angle; this.silence(); }
