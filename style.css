@@ -7,3 +7,10 @@
 aside{padding:9px 16px;gap:6px 16px}.control-title .eyebrow{font-size:8px}.control-title output{font-size:17px}.hint{font-size:9px}.direction{font-size:17px}.direction span{font-size:7px}.direction b{font-size:9px}.slider{height:34px}.rail{top:14px;height:6px}.torque-fill{top:15px;height:4px}.thumb{top:3px;width:28px;height:28px}.thumb span{height:11px}.zero-label{top:30px}.readout strong{font-size:19px}.readout>span{font-size:8px}.readout #direction{font-size:9px}.phases>span{font-size:8px}.phases output{font-size:12px}.phases label{font-size:10px}.phases>div{margin-top:4px}
 @media(max-width:600px){aside{padding:6px 10px;gap:4px 10px}.control-title{gap:12px}.control-title .eyebrow{font-size:7px}.control-title output{font-size:16px}.hint{font-size:8px}.direction{font-size:14px}.readout strong{font-size:15px}.readout>span:first-child,.phases>span{font-size:7px}.readout #direction{font-size:8px}.phases output{font-size:10px}.phases label{font-size:8px}.phases>div{margin-top:3px}.subtle{font-size:7px;padding:5px}.readout{gap:2px}}
 @media(max-height:550px) and (min-width:601px){aside{padding:5px 12px;gap:3px 12px}}
+/* Motion readouts must not change the height of the surrounding grid. */
+.readout{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:10px 23px 13px;gap:2px;justify-items:center;min-width:0}
+.readout>span:first-child{line-height:10px;text-align:center}
+.readout strong{line-height:23px;white-space:nowrap}
+.readout #direction{display:block;height:13px;line-height:13px;white-space:nowrap;text-align:center}
+.control-title output{min-width:5ch;line-height:20px;text-align:right;white-space:nowrap}
+@media(max-width:600px){.readout{grid-template-rows:9px 18px 11px;gap:1px}.readout>span:first-child{line-height:9px}.readout strong{line-height:18px}.readout #direction{height:11px;line-height:11px}}
